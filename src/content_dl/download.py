@@ -70,15 +70,62 @@ def _avatar_with_owner(result: Result) -> tuple[Item, Owner] | None:
     return (uploader.avatar, uploader) if uploader and uploader.avatar else None
 
 
-def select_items(result: Result, want: Iterable[str] | None = None) -> list[tuple[Item, Owner]]:
+ItemPick = tuple[ItemKind, int | None]
+
+
+def parse_item_picks(spec: str) -> list[ItemPick]:
+    """Parse ``--items``: ``KIND[:INDEX]``, comma separated. A kind without an index means all of that kind.
+
+    >>> parse_item_picks("image:1, video:2,avatar")
+    [('image', 1), ('video', 2), ('avatar', None)]
+    >>> parse_item_picks("images")
+    [('image', None)]
+    """
+    picks: list[ItemPick] = []
+    for part in spec.split(","):
+        name, _, index = part.strip().partition(":")
+        if not name:
+            continue
+
+        kinds = normalise_want([name]) or []
+        if not index.strip():
+            picks.append((kinds[0], None))
+            continue
+
+        try:
+            picks.append((kinds[0], int(index)))
+        except ValueError:
+            raise ValueError(f"item index must be a number, got {part.strip()!r}") from None
+
+    if not picks:
+        raise ValueError("--items needs at least one KIND[:INDEX]")
+
+    return picks
+
+
+def _picked(item: Item, picks: list[ItemPick]) -> bool:
+    return any(item.kind == kind and (index is None or item.index == index) for kind, index in picks)
+
+
+def select_items(
+    result: Result, want: Iterable[str] | None = None, picks: list[ItemPick] | None = None
+) -> list[tuple[Item, Owner]]:
     """Pick the items to save, each with the object whose metadata it carries.
 
-    With ``want``, every item of those kinds (and the avatar, if asked). Without it, the
+    With ``picks`` (from ``--items``), exactly those items, in the result's order. With
+    ``want``, every item of those kinds (and the avatar, if asked). Without either, the
     defaults: every video and image, audio only where its post has no video (the video's
     download already includes the audio), and the avatar of a profile with nothing else.
     """
     kinds = normalise_want(want)
     avatar = _avatar_with_owner(result)
+
+    if picks is not None:
+        chosen = [(item, result) for item in result.items if _picked(item, picks)]
+        if avatar and _picked(avatar[0], picks):
+            chosen.append(avatar)
+
+        return chosen
 
     if kinds is not None:
         chosen = [(item, result) for item in result.items if item.kind in kinds]
@@ -282,12 +329,13 @@ def download(
     embed_metadata: bool = False,
     cookies: Cookies | None = None,
     on_item: Callable[[Download], None] | None = None,
+    picks: list[ItemPick] | None = None,
 ) -> list[Download]:
     """Save the items of an extracted result and report what happened to each.
 
-    ``want`` picks item kinds as ``extract()`` does; without it the defaults of
-    ``select_items`` apply. ``output`` is a yt-dlp style file name template (see
-    ``content_dl.template``). ``format`` is a yt-dlp format selection for video items.
+    ``want`` picks item kinds as ``extract()`` does, ``picks`` names single items (see
+    ``parse_item_picks``), and without either the defaults of ``select_items`` apply.
+    ``output`` is a yt-dlp style file name template (see ``content_dl.template``). ``format`` is a yt-dlp format selection for video items.
     ``embed_metadata`` writes the post's (or, for an avatar, the profile's) metadata into each
     file. One failed item doesn't stop the others; ``on_item`` is called as each one finishes.
 
@@ -296,7 +344,7 @@ def download(
     """
     run = _Run(output=output, format=format, embed_metadata=embed_metadata, cookies=cookies)
     downloads: list[Download] = []
-    for item, owner in select_items(result, want):
+    for item, owner in select_items(result, want, picks):
         try:
             outcome = _save(run, result, item, owner)
         except (ProviderError, OSError, ValueError) as error:

@@ -1,4 +1,4 @@
-"""Milestone 5: the downloader, ``-o`` templates, ``--want`` and ``--embed-metadata``.
+"""Milestones 5 and 8: the downloader, ``-o`` templates, ``--want``, ``--items`` and ``--embed-metadata``.
 
 Offline: files come from a fake HTTP stream, and yt-dlp's download step is replaced by one
 that copies a small local video. The ffmpeg tests make that video with ffmpeg and are skipped
@@ -17,9 +17,9 @@ from pathlib import Path
 import pytest
 import yt_dlp
 
-from content_dl import Item, Post, Profile, download, select_items
+from content_dl import Item, Post, Profile, download, result_to_json, select_items
 from content_dl.cli import main
-from content_dl.download import template_context
+from content_dl.download import parse_item_picks, template_context
 from content_dl.embed import Tags, build_exif, build_xmp, embed_image_tags, tags_for
 from content_dl.providers import GalleryDlProvider, YtDlpProvider
 from content_dl.providers.native import http
@@ -476,3 +476,103 @@ def test_live_youtube_download(tmp_path) -> None:
     assert len(names) == 2 and names[0].startswith("jNQXAC9IVRw_thumbnail") and names[1].startswith("jNQXAC9IVRw_video")
     if HAS_FFMPEG:
         assert probe_tags(tmp_path / names[1])["title"] == "Me at the zoo"
+
+
+# Picking single items (milestone 8: what the Seal fork's picker needs)
+
+
+def test_picks_choose_single_items_and_the_avatar() -> None:
+    post = carousel_post()
+    chosen = select_items(post, picks=parse_item_picks("thumbnail:2,image:1,avatar"))
+
+    # Result order, not the order of the picks; the avatar carries the uploader's metadata.
+    assert [(item.kind, item.index) for item, _ in chosen] == [("image", 1), ("thumbnail", 2), ("avatar", None)]
+    assert chosen[2][1] is post.uploader
+
+
+def test_a_pick_without_an_index_means_every_item_of_that_kind() -> None:
+    chosen = select_items(carousel_post(), picks=parse_item_picks("images,videos"))
+
+    assert [(item.kind, item.index) for item, _ in chosen] == [("image", 1), ("video", 2)]
+
+
+def test_picks_that_match_nothing_choose_nothing() -> None:
+    assert select_items(carousel_post(), picks=parse_item_picks("image:9")) == []
+
+
+@pytest.mark.parametrize("spec", ["image:one", "poster:1", " , "])
+def test_bad_picks_are_errors(spec) -> None:
+    with pytest.raises(ValueError):
+        parse_item_picks(spec)
+
+
+def saved_result(tmp_path) -> str:
+    path = tmp_path / "result.json"
+    path.write_text(result_to_json(carousel_post()), encoding="utf-8")
+    return str(path)
+
+
+def test_load_info_json_downloads_picked_items_and_reports_json(
+    tmp_path, capsys, fake_files, fake_ytdlp_download
+) -> None:
+    calls, _ = fake_ytdlp_download
+    template = str(tmp_path / "out" / "%(kind)s %(index)s.%(ext)s")
+    args = ["--load-info-json", saved_result(tmp_path), "--items", "image:1,video:2,avatar", "-o", template]
+
+    assert main([*args, "--report-json"]) == 0
+
+    reports = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [(report["kind"], report["index"], report["status"]) for report in reports] == [
+        ("image", 1, "saved"),
+        ("video", 2, "saved"),
+        ("avatar", None, "saved"),
+    ]
+    assert reports[0]["path"] == str(tmp_path / "out" / "image 1.jpg")
+    # Nothing was extracted: files came straight from the saved result, the video's audio went along.
+    assert fake_files == ["https://cdn.example.com/1.jpg?stp=x", "https://cdn.example.com/avatar.jpg"]
+    assert calls == [{"format": None, "formats": ["720", "a"]}]
+
+
+def test_report_json_includes_failures(tmp_path, capsys) -> None:
+    template = str(tmp_path / "%(kind)s.%(ext)s")
+    post = carousel_post()
+    post.items[0].url = None
+    path = tmp_path / "result.json"
+    path.write_text(result_to_json(post), encoding="utf-8")
+
+    assert main(["--load-info-json", str(path), "--items", "image:1", "-o", template, "--report-json"]) == 1
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["status"] == "failed" and report["error"] and report["path"] is None
+
+
+def test_load_info_json_and_a_url_are_exclusive(tmp_path, capsys) -> None:
+    assert main(["--load-info-json", saved_result(tmp_path), "https://www.instagram.com/p/x/"]) == 2
+    assert main([]) == 2
+    assert "either a URL or --load-info-json" in capsys.readouterr().err
+
+
+def test_unreadable_info_json_is_a_clear_error(tmp_path, capsys) -> None:
+    broken = tmp_path / "broken.json"
+    broken.write_text("{not json", encoding="utf-8")
+
+    assert main(["--load-info-json", str(broken)]) == 1
+    assert main(["--load-info-json", str(tmp_path / "missing.json")]) == 1
+    assert capsys.readouterr().err.count("content-dl: error:") == 2
+
+
+def test_load_info_json_round_trips_through_dump(tmp_path, capsys) -> None:
+    assert main(["--load-info-json", saved_result(tmp_path), "-J"]) == 0
+    assert json.loads(capsys.readouterr().out) == json.loads(result_to_json(carousel_post()))
+
+
+def test_embedding_uses_the_ffmpeg_yt_dlp_is_told_to_use(tmp_path, monkeypatch) -> None:
+    from content_dl.embed import find_ffmpeg
+
+    binary = tmp_path / "libffmpeg.so"
+    binary.write_bytes(b"")
+    monkeypatch.setenv("CONTENT_DL_FFMPEG_LOCATION", str(binary))
+    assert find_ffmpeg() == str(binary)
+
+    monkeypatch.setenv("CONTENT_DL_FFMPEG_LOCATION", str(tmp_path / "missing"))
+    assert find_ffmpeg() == shutil.which("ffmpeg")

@@ -156,6 +156,7 @@ The CLI copies yt-dlp's flags where they mean the same thing, so it feels famili
 | `content-dl --cookies cookies.txt URL` | Use cookies from a Netscape cookies.txt file, and prefer logged-in routes |
 | `content-dl --cookies-from-browser firefox URL` | Same, reading the cookies from a browser's store (`BROWSER[:PROFILE]`) |
 | `content-dl --embed-metadata URL` | Write metadata into the files (ffmpeg tags for video and audio, EXIF/XMP for images) |
+| `content-dl --load-info-json result.json --items image:1,video:2,avatar --report-json` | Save single items of a result `-J` already printed, without extracting again, and report each one as a JSON line (the Seal fork's picker uses this) |
 | `content-dl --js-runtimes quickjs:PATH --ffmpeg-location PATH URL` | Tell yt-dlp which JS runtime and ffmpeg to use, as its own flags do (the Seal fork passes youtubedl-android's) |
 | `content-dl serve --port 8080` | Start the optional HTTP server |
 
@@ -179,8 +180,8 @@ content-dl runs on the phone, embedded in the Seal fork, the same way yt-dlp run
 1. The user shares a URL to the app.
 2. The app runs `extract(url)` and shows what was found, grouped: "3 images, 1 video, avatar".
 3. The user picks items (and a video quality, from `formats`).
-4. The app downloads them. Plain files go through the app's own downloader; yt-dlp video and audio stay with yt-dlp, because it handles stream merging and ffmpeg.
-5. The result and its metadata are saved to Seal's existing Room download-history database.
+4. The app saves them with content-dl's downloader, from the result it already has (`--load-info-json`, `--items`), so nothing is extracted twice. Plain files are fetched by content-dl; video and audio stay with yt-dlp inside content-dl, because it handles stream merging and ffmpeg. Files get content-dl's names and embedded metadata, the same as on desktop, in Seal's download folder.
+5. Each saved file is added to the media library and to Seal's existing Room download-history database, one row per file. Still pictures use the saved file as their history thumbnail, because CDN URLs expire.
 
 **Updates:** yt-dlp, gallery-dl, content-dl's native providers and the routing table all update without a new APK, the same way Seal updates yt-dlp today.
 
@@ -209,6 +210,7 @@ Each milestone can be tested from the command line on desktop. Seal isn't touche
    - Checked Nov 7, 2026 on a Pixel 7 (Android 17): sharing a YouTube URL to "Extract with content-dl" (the fork's `content-dl` branch) printed the full Post, with video, audio, thumbnail and avatar, on screen and to Logcat (tag `content-dl`). This needed a current yt-dlp. A fresh install still has youtubedl-android's bundled 2024.09.27 yt-dlp, which YouTube rejects (only the thumbnail comes back) until Seal's yt-dlp update runs.
 8. [ ] **Seal fork UI.** Share-sheet picker, downloads, history.
    - Done when: sharing an Instagram post lets you pick and save individual images and the avatar.
+   - Status (Nov 7, 2026): the fork's "Extract with content-dl" share target now opens a picker: the uploader, the caption, a summary ("3 images, 1 video, avatar"), then every item grouped by kind, with a quality menu on each video. Picked items save through `content-dl --load-info-json --items --report-json`, show their progress one by one, and land in Seal's download folder and history. A share runs Seal's yt-dlp update first when yt-dlp has never been updated on that install, or when Seal's auto-update is due. On desktop, the same commands saved a YouTube video's thumbnail and avatar, and its video at a picked quality merged with audio. Instagram refused the desktop IP logged out, so the Instagram check is still to do on a real phone.
 
 ## Open questions and risks
 
@@ -222,6 +224,6 @@ Each milestone can be tested from the command line on desktop. Seal isn't touche
 | cobalt's public instance requires bot verification | Can't rely on it | Self-host it; treat it as optional |
 | gallery-dl's `extractor.module-sources` option for loading extra extractors | Decides whether Threads can be a gallery-dl extractor | Decided in milestone 4: Threads is a content-dl native provider, which needs no gallery-dl extension point |
 | Instagram's `web_profile_info` answered HTTP 404 to a logged-out desktop request (Nov 7, 2026), and the logged-out profile page was an error page | Instagram avatars may need the user's cookies, or another route | Check from a mobile IP and with cookies; if it stays closed, find another logged-out source for the avatar |
-| A fresh Seal install runs youtubedl-android's bundled yt-dlp (2024.09.27), which YouTube rejects | content-dl gets no YouTube streams until yt-dlp is updated | In milestone 8, make the fork run Seal's yt-dlp update before the first extraction, or show a prompt |
+| A fresh Seal install runs youtubedl-android's bundled yt-dlp (2024.09.27), which YouTube rejects | content-dl gets no YouTube streams until yt-dlp is updated | Done in milestone 8: the share target runs Seal's yt-dlp update before extracting when yt-dlp was never updated on that install, or when Seal's auto-update is due. If the update fails, it extracts with the current yt-dlp |
 | Latest yt-dlp needs Python 3.11 or newer | content-dl's `requires-python = ">=3.10"` is looser than its main dependency | The phone's runtime is 3.11, so Android is fine; raise `requires-python` to 3.11 when convenient |
 | Licensing: yt-dlp is Unlicense, gallery-dl GPL-2.0, cobalt AGPL-3.0, Seal GPL-3.0 | Affects how content-dl can be licensed and shipped | Confirm each license before the first release |

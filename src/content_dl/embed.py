@@ -26,6 +26,7 @@ from datetime import datetime
 from pathlib import Path
 from xml.sax.saxutils import escape
 
+from content_dl.providers.ytdlp import FFMPEG_LOCATION_ENV
 from content_dl.schema import Post, Profile
 
 
@@ -372,8 +373,27 @@ def ffmpeg_tags(tags: Tags) -> dict[str, str]:
     return {key: value for key, value in pairs.items() if value}
 
 
+def find_ffmpeg() -> str | None:
+    """The ffmpeg that yt-dlp is told to use (``--ffmpeg-location``), else the one on PATH.
+
+    INFO: On Android, youtubedl-android ships ffmpeg as ``libffmpeg.so``, which isn't on PATH
+    under the name ``ffmpeg``, so the location has to be honoured here too.
+    """
+    location = os.environ.get(FFMPEG_LOCATION_ENV, "").strip()
+    if location:
+        candidate = Path(location)
+        if candidate.is_dir():
+            found = shutil.which("ffmpeg", path=str(candidate))
+            if found:
+                return found
+        elif candidate.is_file():
+            return str(candidate)
+
+    return shutil.which("ffmpeg")
+
+
 def embed_media_tags(path: Path, tags: Tags) -> None:
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = find_ffmpeg()
     if ffmpeg is None:
         raise EmbedError("ffmpeg isn't installed, so video and audio metadata wasn't written")
 
