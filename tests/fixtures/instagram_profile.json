@@ -1,0 +1,10 @@
+{
+  "type": "profile",
+  "platform": "instagram",
+  "id": "123456",
+  "username": "someone",
+  "name": "Some One",
+  "url": "https://www.instagram.com/someone/",
+  "avatar": { "kind": "avatar", "url": "https://...", "ext": "jpg", "width": 1080, "height": 1080, "provider": "native" },
+  "items": []
+}

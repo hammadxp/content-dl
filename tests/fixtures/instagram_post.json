@@ -1,0 +1,23 @@
+{
+  "type": "post",
+  "platform": "instagram",
+  "id": "C9xYz123",
+  "title": null,
+  "description": "sunset at the beach",
+  "date": "2026-10-30T18:22:00Z",
+  "url": "https://www.instagram.com/p/C9xYz123/",
+  "uploader": {
+    "type": "profile",
+    "platform": "instagram",
+    "id": "123456",
+    "username": "someone",
+    "name": "Some One",
+    "url": "https://www.instagram.com/someone/",
+    "avatar": { "kind": "avatar", "url": "https://...", "ext": "jpg", "width": 1080, "height": 1080, "provider": "native" }
+  },
+  "items": [
+    { "index": 1, "kind": "image", "url": "https://...", "ext": "jpg", "width": 1440, "height": 1800, "provider": "gallery-dl" },
+    { "index": 2, "kind": "video", "ext": "mp4", "duration": 14.2, "formats": [], "provider": "yt-dlp" },
+    { "index": 2, "kind": "thumbnail", "url": "https://...", "ext": "jpg", "provider": "yt-dlp" }
+  ]
+}
