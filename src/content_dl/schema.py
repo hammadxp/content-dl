@@ -15,11 +15,14 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+import re
+from datetime import date, datetime, timezone
 from typing import Any, Literal, Union, get_args
 
 ItemKind = Literal["video", "audio", "image", "thumbnail", "avatar"]
 ITEM_KINDS: frozenset[str] = frozenset(get_args(ItemKind))
+
+DAY_ONLY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 JsonDict = dict[str, Any]
 
@@ -35,16 +38,25 @@ def to_utc_iso(value: int | float | str | datetime | None) -> str | None:
     '2026-10-30T18:22:00Z'
     >>> to_utc_iso("2026-10-30T20:22:00+02:00")
     '2026-10-30T18:22:00Z'
+    >>> to_utc_iso("2005-04-24")
+    '2005-04-24'
     >>> to_utc_iso(None) is None
     True
 
-    Naive datetimes and strings without an offset are treated as UTC.
+    Naive datetimes and strings without an offset are treated as UTC. A day without a time
+    (``2005-04-24``) stays day-only, because adding midnight would invent a time of day.
     """
     if value is None:
         return None
 
     if isinstance(value, bool):
         raise SchemaError(f"not a timestamp: {value!r}")
+
+    if isinstance(value, str) and DAY_ONLY.fullmatch(value):
+        try:
+            return date.fromisoformat(value).isoformat()
+        except ValueError as error:
+            raise SchemaError(f"not an ISO 8601 date: {value!r}") from error
 
     if isinstance(value, (int, float)):
         moment = datetime.fromtimestamp(value, tz=timezone.utc)
@@ -136,7 +148,7 @@ class Item:
 class Profile:
     """An account. Returned at the top level for a profile URL, and as ``Post.uploader``.
 
-    A profile has no ``date``: metadata belongs to the object it describes.
+    A profile has no ``upload_date``: metadata belongs to the object it describes.
     """
 
     type: Literal["profile"] = field(default="profile", init=False)
@@ -195,7 +207,7 @@ class Post:
     """A single post: one video, one image, or a carousel of several.
 
     ``title`` is often ``None`` on social platforms; ``description`` holds the caption.
-    ``date`` is UTC ISO 8601 (``2026-10-30T18:22:00Z``) and is normalised on the way in.
+    ``upload_date`` is UTC ISO 8601 (``2026-10-30T18:22:00Z``) and is normalised on the way in.
     """
 
     type: Literal["post"] = field(default="post", init=False)
@@ -203,15 +215,15 @@ class Post:
     id: str | None = None
     title: str | None = None
     description: str | None = None
-    date: str | None = None
+    upload_date: str | None = None
     url: str | None = None
     uploader: Profile | None = None
     items: list[Item] = field(default_factory=list)
 
-    FIELDS = ("type", "platform", "id", "title", "description", "date", "url", "uploader", "items")
+    FIELDS = ("type", "platform", "id", "title", "description", "upload_date", "url", "uploader", "items")
 
     def __post_init__(self) -> None:
-        self.date = to_utc_iso(self.date)
+        self.upload_date = to_utc_iso(self.upload_date)
 
     def to_dict(self) -> JsonDict:
         return {
@@ -220,7 +232,7 @@ class Post:
             "id": self.id,
             "title": self.title,
             "description": self.description,
-            "date": self.date,
+            "upload_date": self.upload_date,
             "url": self.url,
             "uploader": self.uploader.to_dict(as_uploader=True) if self.uploader else None,
             "items": [item.to_dict() for item in self.items],
@@ -239,7 +251,7 @@ class Post:
             id=data.get("id"),
             title=data.get("title"),
             description=data.get("description"),
-            date=data.get("date"),
+            upload_date=data.get("upload_date"),
             url=data.get("url"),
             uploader=Profile.from_dict(uploader) if uploader is not None else None,
             items=_items_from_list(data.get("items"), "post"),

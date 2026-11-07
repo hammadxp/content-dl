@@ -1,0 +1,43 @@
+{
+  "_type": "playlist",
+  "id": "UC4QobU6STFB0P71PMvOGN5A",
+  "title": "jawed - Videos",
+  "description": "",
+  "channel": "jawed",
+  "channel_id": "UC4QobU6STFB0P71PMvOGN5A",
+  "uploader": "jawed",
+  "uploader_id": "@jawed",
+  "uploader_url": "https://www.youtube.com/@jawed",
+  "channel_url": "https://www.youtube.com/channel/UC4QobU6STFB0P71PMvOGN5A",
+  "webpage_url": "https://www.youtube.com/@jawed/videos",
+  "extractor_key": "YoutubeTab",
+  "thumbnails": [
+    {
+      "url": "https://yt3.googleusercontent.com/9oxdo7zGCuEofTfnBIuUAf7B0ynncs-aQmgx9lXQ33VRwrJyQlHmYpH6wfczKgGYfVThQ31dhg=w2560-fcrop64=1,00005a57ffffa5a8-k-c0xffffffff-no-nd-rj",
+      "height": 424,
+      "width": 2560,
+      "preference": -10,
+      "id": "5",
+      "resolution": "2560x424"
+    },
+    {
+      "url": "https://yt3.googleusercontent.com/9oxdo7zGCuEofTfnBIuUAf7B0ynncs-aQmgx9lXQ33VRwrJyQlHmYpH6wfczKgGYfVThQ31dhg=s0",
+      "id": "banner_uncropped",
+      "preference": -5
+    },
+    {
+      "url": "https://yt3.googleusercontent.com/uI3VE4PVqvCy0xnWLqMJnEzyBUm3T8VHOCp4ee-1RxdHqKXCdUE_qXYQnpf9AfuEoIPactVyDhM=s0",
+      "id": "avatar_uncropped",
+      "preference": 1
+    }
+  ],
+  "entries": [
+    {
+      "_type": "url",
+      "ie_key": "Youtube",
+      "id": "jNQXAC9IVRw",
+      "url": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+      "title": "Me at the zoo"
+    }
+  ]
+}

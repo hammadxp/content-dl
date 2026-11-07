@@ -7,10 +7,13 @@ name = "content-dl"
 version = "0.1.0"
 description = "Extract every video, audio track, image, thumbnail and avatar from one URL, with consistent metadata."
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["yt-dlp>=2026.10.21"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8,!=9.2.0"]
+
+[project.scripts]
+content-dl = "content_dl.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -10,7 +10,7 @@ content-dl takes one URL and returns everything that can be extracted from it, i
 
 - Platforms: YouTube, Instagram, Threads, X, TikTok, Reddit, Snapchat, plus a generic fallback for unknown sites.
 - Item kinds: video, audio, image, thumbnail, avatar (profile picture).
-- Metadata on every result: id, title, uploader, date, platform. A field the platform doesn't provide is `null` (see the serialisation rules under Data model).
+- Metadata on every result: id, title, uploader, upload date, platform. A field the platform doesn't provide is `null` (see the serialisation rules under Data model).
 - Public content only. No cookies or logins.
 - Runs on desktop (CLI, Python API, optional HTTP server) and on Android, embedded in the Seal fork.
 
@@ -47,8 +47,8 @@ Every result is either a **Post** or a **Profile**, and both hold a list of **It
 
 | Object | Fields | Notes |
 | --- | --- | --- |
-| Post | `type`, `platform`, `id`, `title`, `description`, `date`, `url`, `uploader` (a Profile), `items` | `title` is often `null` on social platforms; `description` holds the caption |
-| Profile | `type`, `platform`, `id`, `username`, `name`, `url`, `avatar` (an Item), `items` | No `date`. A profile URL returns this as the top-level result |
+| Post | `type`, `platform`, `id`, `title`, `description`, `upload_date`, `url`, `uploader` (a Profile), `items` | `title` is often `null` on social platforms; `description` holds the caption |
+| Profile | `type`, `platform`, `id`, `username`, `name`, `url`, `avatar` (an Item), `items` | No `upload_date`. A profile URL returns this as the top-level result |
 | Item | `index`, `kind`, `url`, `ext`, `width`, `height`, `duration`, `formats`, `provider`, `extra` | `kind` is one of `video`, `audio`, `image`, `thumbnail`, `avatar` |
 
 **Rules**
@@ -57,10 +57,10 @@ Every result is either a **Post** or a **Profile**, and both hold a list of **It
    - **Post and Profile** always write every field, and an unset one is `null`.
    - **Item** writes only the fields that are set, so a thumbnail has no `duration` key and a video served only through `formats` has no `url` key. An empty `formats: []` is still written, because it means the item is a stream source.
    - **A Post's `uploader`** is a Profile that leaves out `items` when the list is empty, since a post never extracts its uploader's other content. A top-level Profile always writes `items`, even as `[]`.
-   - `platform` is always set, because the router knows it before any provider runs.
+   - `platform` is always set, because the router knows it before any provider runs. A supported platform uses its name (`youtube`, `instagram`); an unknown site uses its domain without `www.` (`example.com`).
 2. **Providers fill, the merger combines.** Each provider fills what it can. The merger picks each field from the highest-priority provider that has it, and removes duplicate items (same media id, or same URL with the size query stripped).
 3. **Record where each item came from.** Every Item carries `provider`, and the provider's raw data goes in `extra` for debugging.
-4. **Dates are UTC, ISO 8601** (`2026-10-30T18:22:00Z`). Providers convert timestamps on the way in, and a Post converts any date it is given with an offset.
+4. **Upload dates are UTC, ISO 8601** (`2026-10-30T18:22:00Z`). Providers convert timestamps on the way in, and a Post converts any upload date it is given with an offset. When a platform only gives the day, `upload_date` is the day alone (`2005-04-24`), never a made-up midnight.
 5. **Items in a carousel share an `index`** with their thumbnail, so a UI can group a video with its cover image.
 
 ## Example output
@@ -74,7 +74,7 @@ An Instagram carousel post with one image and one video. The image came from gal
   "id": "C9xYz123",
   "title": null,
   "description": "sunset at the beach",
-  "date": "2026-10-30T18:22:00Z",
+  "upload_date": "2026-10-30T18:22:00Z",
   "url": "https://www.instagram.com/p/C9xYz123/",
   "uploader": {
     "type": "profile",
@@ -93,7 +93,7 @@ An Instagram carousel post with one image and one video. The image came from gal
 }
 ```
 
-The same account's profile URL returns a Profile at the top level, with no `date`:
+The same account's profile URL returns a Profile at the top level, with no `upload_date`:
 
 ```json
 {
@@ -108,7 +108,7 @@ The same account's profile URL returns a Profile at the top level, with no `date
 }
 ```
 
-`formats` on a video holds the yt-dlp-style list of streams (resolution, codecs, bitrate) so a UI can offer quality choices.
+`formats` on a video or audio item holds the yt-dlp-style list of streams (resolution, codecs, bitrate, plus each stream's `url` and the `http_headers` needed to fetch it) so a UI can offer quality choices. Stream URLs usually expire within hours and can be tied to the IP that extracted them, so download soon after extracting. The examples above leave `formats` empty to stay short.
 
 ## Providers and routing
 
@@ -116,7 +116,7 @@ The router maps a URL to a platform, then looks up which providers to try for ea
 
 | Platform | video / audio | images | thumbnail | avatar | metadata |
 | --- | --- | --- | --- | --- | --- |
-| YouTube | yt-dlp | none | yt-dlp | native | yt-dlp |
+| YouTube | yt-dlp | none | yt-dlp | yt-dlp | yt-dlp |
 | Instagram | yt-dlp > cobalt > gallery-dl | gallery-dl > cobalt | yt-dlp | native | gallery-dl > yt-dlp |
 | Threads | native | native | native | native | native |
 | X | yt-dlp > cobalt | gallery-dl > cobalt | yt-dlp | gallery-dl | yt-dlp > gallery-dl |
@@ -127,7 +127,7 @@ The router maps a URL to a platform, then looks up which providers to try for ea
 
 **What each provider is good at**
 
-- **yt-dlp:** video and audio streams with every format, and uniform metadata (`id`, `title`, `uploader`, `timestamp`, `extractor_key`).
+- **yt-dlp:** video and audio streams with every format, and uniform metadata (`id`, `title`, `uploader`, `timestamp`, `extractor_key`). On YouTube it also gives the channel avatar: a channel URL returns a Profile with its avatar, and a video costs one extra channel-page request to fill the uploader's avatar (skipped when avatars aren't wanted). Playlist URLs aren't supported.
 - **gallery-dl:** images and carousels, single posts or whole collections. Metadata field names differ per site, so its adapter has a small mapper per platform.
 - **cobalt:** a working media URL when the others fail. It returns almost no metadata, so it is never the metadata source. It runs only as a remote server, on a datacenter IP that Instagram rate-limits sooner, so it is always a fallback.
 - **native:** our own code. Threads posts (JSON embedded in the post page), Instagram profile pictures (`web_profile_info`), and the generic fallback (`og:image` and `og:video` tags).
@@ -183,10 +183,10 @@ Each milestone can be tested from the command line on desktop. Seal isn't touche
 
 1. [x] **Schema.** Post, Profile and Item as typed Python classes, with JSON serialisation.
    - Done when: the two examples above round-trip through the classes unchanged.
-2. [ ] **CLI and the yt-dlp provider.** Project setup, router, `-J` and `-F`.
+2. [x] **CLI and the yt-dlp provider.** Project setup, router, `-J` and `-F`.
    - Done when: `content-dl -J <youtube url>` prints a valid Post with video, audio, thumbnail and metadata.
 3. [ ] **gallery-dl provider and the merger.**
-   - Done when: an Instagram carousel returns every image and video once, with uploader and date filled.
+   - Done when: an Instagram carousel returns every image and video once, with uploader and upload date filled.
 4. [ ] **Native providers.** Threads posts and Instagram profile pictures.
    - Done when: a Threads carousel and an Instagram profile URL both return complete results.
 5. [ ] **Downloader.** `--want`, `-o` templates, `--embed-metadata`.

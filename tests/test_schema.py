@@ -49,7 +49,7 @@ def test_post_example_parses_into_typed_objects() -> None:
 
     assert isinstance(post, Post)
     assert post.title is None
-    assert post.date == "2026-10-30T18:22:00Z"
+    assert post.upload_date == "2026-10-30T18:22:00Z"
     assert isinstance(post.uploader, Profile)
     assert post.uploader.username == "someone"
     assert isinstance(post.uploader.avatar, Item)
@@ -60,11 +60,11 @@ def test_post_example_parses_into_typed_objects() -> None:
     assert post.items[1].url is None
 
 
-def test_profile_example_has_no_date() -> None:
+def test_profile_example_has_no_upload_date() -> None:
     profile = result_from_dict(load_fixture("instagram_profile.json"))
 
     assert isinstance(profile, Profile)
-    assert "date" not in profile.to_dict()
+    assert "upload_date" not in profile.to_dict()
     assert profile.items == []
 
 
@@ -79,7 +79,7 @@ def test_post_writes_missing_fields_as_null() -> None:
         "id": None,
         "title": None,
         "description": None,
-        "date": None,
+        "upload_date": None,
         "url": None,
         "uploader": None,
         "items": [],
@@ -145,7 +145,7 @@ def test_to_utc_iso(value, expected) -> None:
 
 
 def test_post_normalises_date_to_utc() -> None:
-    assert Post(platform="x", date="2026-10-30T20:22:00+02:00").date == "2026-10-30T18:22:00Z"
+    assert Post(platform="x", upload_date="2026-10-30T20:22:00+02:00").upload_date == "2026-10-30T18:22:00Z"
 
 
 @pytest.mark.parametrize("value", ["yesterday", True, ["2026"]])
@@ -171,7 +171,7 @@ def test_item_without_kind_is_rejected() -> None:
     [
         (Item, {"kind": "image", "size": 10}),
         (Post, {"type": "post", "platform": "x", "likes": 3}),
-        (Profile, {"type": "profile", "platform": "x", "date": "2026-10-30T18:22:00Z"}),
+        (Profile, {"type": "profile", "platform": "x", "upload_date": "2026-10-30T18:22:00Z"}),
     ],
 )
 def test_unknown_fields_are_rejected(cls, data) -> None:
