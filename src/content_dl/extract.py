@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from content_dl.merge import merge
 from content_dl.providers import PROVIDERS, ProviderError, get_provider
-from content_dl.router import detect_platform, providers_for
+from content_dl.router import KIND_COLUMNS, columns_for, detect_platform, routes_for
 from content_dl.schema import ITEM_KINDS, ItemKind, Post, Profile, Result
 
 
@@ -56,30 +57,85 @@ def _keep_kinds(result: Result, want: list[ItemKind] | None) -> Result:
     return result
 
 
+class _Fetcher:
+    """Runs each provider at most once per extraction and remembers what it returned."""
+
+    def __init__(self, url: str, platform: str, kinds: list[ItemKind] | None) -> None:
+        self.url = url
+        self.platform = platform
+        self.kinds = kinds
+        self.results: dict[str, Result] = {}
+        self.errors: dict[str, str] = {}
+
+    def get(self, name: str) -> Result | None:
+        if name not in self.results and name not in self.errors:
+            try:
+                self.results[name] = get_provider(name).extract(self.url, self.platform, self.kinds)
+            except ProviderError as error:
+                self.errors[name] = str(error)
+
+        return self.results.get(name)
+
+
+def _fills_column(result: Result, column: str, kinds: list[ItemKind] | None) -> bool:
+    """Does a result have what a routing column asks for? Metadata only needs a result."""
+    if column == "metadata":
+        return True
+
+    if column == "avatar":
+        return _avatar_of(result) is not None
+
+    wanted = {kind for kind, kind_column in KIND_COLUMNS.items() if kind_column == column}
+    if kinds is not None:
+        wanted &= set(kinds)
+
+    return any(item.kind in wanted for item in result.items)
+
+
+def _avatar_of(result: Result) -> object:
+    if isinstance(result, Profile):
+        return result.avatar
+
+    return result.uploader.avatar if result.uploader else None
+
+
 def extract(url: str, want: Iterable[str] | None = None, provider: str | None = None) -> Result:
     """Extract everything at ``url`` and return it as a Post or Profile.
 
     ``want`` limits the result to some item kinds (``["video", "image"]``); metadata is always
-    filled. ``provider`` forces one provider and skips the routing table, for debugging.
+    filled. ``provider`` forces one provider and skips the routing table and the merger, for
+    debugging.
 
-    INFO: The merger arrives in milestone 3. Until then the first provider in the route that
-    returns a result wins, and a failing provider passes the request to the next one.
+    Each routing column (metadata, then one per wanted kind) tries its providers left to right
+    until one returns what the column asks for. A provider runs at most once, and everything
+    the providers returned is merged, so a provider called for one column can still fill
+    fields or items another column's provider left out.
     """
     kinds = normalise_want(want)
     platform = detect_platform(url)
 
-    names = [provider] if provider else [name for name in providers_for(platform, kinds) if name in PROVIDERS]
-    if not names:
+    if provider:
+        try:
+            return _keep_kinds(get_provider(provider).extract(url, platform, kinds), kinds)
+        except ProviderError as error:
+            raise ExtractionError(str(error)) from error
+
+    routes = routes_for(platform)
+    columns = columns_for(kinds)
+    if not any(name in PROVIDERS for column in columns for name in routes.get(column, [])):
         raise ExtractionError(f"no provider can handle {platform} yet")
 
-    errors: list[str] = []
-    for name in names:
-        try:
-            result = get_provider(name).extract(url, platform, kinds)
-        except ProviderError as error:
-            errors.append(str(error))
-            continue
+    fetcher = _Fetcher(url, platform, kinds)
+    for column in columns:
+        for name in routes.get(column, []):
+            if name not in PROVIDERS:
+                continue
 
-        return _keep_kinds(result, kinds)
+            result = fetcher.get(name)
+            if result is not None and _fills_column(result, column, kinds):
+                break
 
-    raise ExtractionError("; ".join(errors))
+    if not fetcher.results:
+        raise ExtractionError("; ".join(fetcher.errors.values()))
+
+    return _keep_kinds(merge(fetcher.results, routes, kinds), kinds)

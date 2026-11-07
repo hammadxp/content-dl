@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from content_dl.providers.base import ProviderError
-from content_dl.schema import Item, Post, Profile, SchemaError
+from content_dl.schema import Item, ItemKind, Post, Profile, SchemaError
 
 NAME = "yt-dlp"
 
@@ -46,6 +46,15 @@ FORMAT_FIELDS = (
 # Storyboards are preview sprite sheets, not streams.
 STORYBOARD_EXTS = frozenset({"mhtml"})
 
+# INFO: Some extractors make up a title when the site has none ("Post by someone" on Instagram).
+# A made-up title would hide the caption in output templates, so it is dropped.
+GENERATED_TITLES: dict[str, tuple[str, ...]] = {
+    "Instagram": ("Post by {channel}", "Video by {channel}"),
+}
+
+# Extractors whose ``channel`` field is the account's username rather than a display name.
+CHANNEL_IS_USERNAME = frozenset({"Instagram"})
+
 
 def _trim_format(fmt: dict[str, Any]) -> dict[str, Any]:
     return {key: fmt[key] for key in FORMAT_FIELDS if fmt.get(key) is not None}
@@ -79,10 +88,21 @@ def _number(value: Any) -> float | None:
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
 
+def _title_from_info(info: dict[str, Any]) -> str | None:
+    title = info.get("title") or None
+    channel = info.get("channel")
+    generated = GENERATED_TITLES.get(info.get("extractor_key") or "", ())
+    if title and channel and title in {pattern.format(channel=channel) for pattern in generated}:
+        return None
+
+    return title
+
+
 def _uploader_from_info(info: dict[str, Any], platform: str) -> Profile | None:
     uploader_id = info.get("uploader_id")
     channel_id = info.get("channel_id")
-    name = info.get("uploader") or info.get("channel")
+    channel_is_username = info.get("extractor_key") in CHANNEL_IS_USERNAME
+    name = info.get("uploader") or (None if channel_is_username else info.get("channel"))
     url = info.get("uploader_url") or info.get("channel_url")
 
     if not any((uploader_id, channel_id, name, url)):
@@ -90,9 +110,12 @@ def _uploader_from_info(info: dict[str, Any], platform: str) -> Profile | None:
 
     # INFO: On YouTube, uploader_id is the "@handle" and channel_id the stable "UC..." id. Other
     # extractors put a numeric id in uploader_id, which isn't a username, so it stays the id.
-    username = None
+    username = info.get("channel") if channel_is_username else None
     if isinstance(uploader_id, str) and uploader_id.startswith("@"):
         username = uploader_id[1:]
+
+    if channel_is_username and username and not url and platform == "instagram":
+        url = f"https://www.instagram.com/{username}/"
 
     profile_id = channel_id or (uploader_id if username is None else None)
 
@@ -105,7 +128,12 @@ def _uploader_from_info(info: dict[str, Any], platform: str) -> Profile | None:
     )
 
 
-def _thumbnail_from_info(info: dict[str, Any], index: int) -> Item | None:
+def _media_id(info: dict[str, Any]) -> str | None:
+    """The entry's id, which the merger matches against other providers' ``media_id``."""
+    return str(info["id"]) if info.get("id") is not None else None
+
+
+def _thumbnail_from_info(info: dict[str, Any], index: int, kind: ItemKind = "thumbnail") -> Item | None:
     url = info.get("thumbnail")
     thumbnails = [thumb for thumb in info.get("thumbnails") or [] if thumb.get("url")]
     if not url and thumbnails:
@@ -116,22 +144,25 @@ def _thumbnail_from_info(info: dict[str, Any], index: int) -> Item | None:
         return None
 
     chosen = next((thumb for thumb in thumbnails if thumb["url"] == url), {})
+    extra = {"id": chosen.get("id"), "media_id": _media_id(info)}
     return Item(
         index=index,
-        kind="thumbnail",
+        kind=kind,
         url=url,
         ext=_ext_from_url(url),
         width=chosen.get("width"),
         height=chosen.get("height"),
         provider=NAME,
-        extra={"id": chosen["id"]} if chosen.get("id") is not None else None,
+        extra={key: value for key, value in extra.items() if value is not None} or None,
     )
 
 
-def items_from_info(info: dict[str, Any], index: int = 1) -> list[Item]:
+def items_from_info(info: dict[str, Any], index: int = 1, in_carousel: bool = False) -> list[Item]:
     """Turn one yt-dlp video entry into its video, audio and thumbnail items.
 
     All items share ``index``, so a UI can group the video with its audio and cover image.
+    In a carousel an entry without streams is a still image, so its picture is an ``image``
+    item rather than a thumbnail.
     """
     formats = info.get("formats") or []
     video_formats = [fmt for fmt in formats if _has_video(fmt)]
@@ -155,7 +186,7 @@ def items_from_info(info: dict[str, Any], index: int = 1) -> list[Item]:
                 duration=duration,
                 formats=[_trim_format(fmt) for fmt in video_formats],
                 provider=NAME,
-                extra={"extractor_key": extractor, "format_id": info.get("format_id")},
+                extra={"extractor_key": extractor, "format_id": info.get("format_id"), "media_id": _media_id(info)},
             )
         )
 
@@ -170,11 +201,16 @@ def items_from_info(info: dict[str, Any], index: int = 1) -> list[Item]:
                 duration=duration,
                 formats=[_trim_format(fmt) for fmt in audio_formats],
                 provider=NAME,
-                extra={"extractor_key": extractor, "format_id": best_audio.get("format_id")},
+                extra={
+                    "extractor_key": extractor,
+                    "format_id": best_audio.get("format_id"),
+                    "media_id": _media_id(info),
+                },
             )
         )
 
-    thumbnail = _thumbnail_from_info(info, index)
+    still = in_carousel and not items
+    thumbnail = _thumbnail_from_info(info, index, "image" if still else "thumbnail")
     if thumbnail:
         items.append(thumbnail)
 
@@ -238,21 +274,46 @@ def profile_from_info(info: dict[str, Any], platform: str) -> Profile:
     return profile
 
 
+def is_carousel_info(info: dict[str, Any]) -> bool:
+    """A carousel is a playlist whose entries are the post's own media, not links to other pages.
+
+    INFO: Instagram returns a multi-media post as a playlist with every entry extracted inline.
+    A real playlist (a YouTube playlist, a channel tab) lists links (``_type: url``) instead,
+    because the provider extracts playlists flat.
+    """
+    entries = info.get("entries")
+    if info.get("_type") not in ("playlist", "multi_video") or not isinstance(entries, list) or not entries:
+        return False
+
+    return all(isinstance(entry, dict) and entry.get("_type", "video") == "video" for entry in entries)
+
+
 def post_from_info(info: dict[str, Any], platform: str) -> Post:
-    """Translate a yt-dlp info dict for one video into a Post."""
-    if info.get("_type") in ("playlist", "multi_video") or info.get("entries") is not None:
+    """Translate a yt-dlp info dict for one video, or one carousel post, into a Post."""
+    carousel = is_carousel_info(info)
+    if not carousel and (info.get("_type") in ("playlist", "multi_video") or info.get("entries") is not None):
         raise ProviderError("playlists aren't supported, pass a single video or channel URL")
+
+    if carousel:
+        extractor = {"extractor_key": info.get("extractor_key")}
+        items = [
+            item
+            for position, entry in enumerate(info["entries"], 1)
+            for item in items_from_info({**extractor, **entry}, position, in_carousel=True)
+        ]
+    else:
+        items = items_from_info(info)
 
     try:
         return Post(
             platform=platform,
             id=str(info["id"]) if info.get("id") is not None else None,
-            title=info.get("title"),
+            title=_title_from_info(info),
             description=info.get("description") or None,
             upload_date=_upload_date_from_info(info),
             url=info.get("webpage_url") or info.get("original_url"),
             uploader=_uploader_from_info(info, platform),
-            items=items_from_info(info),
+            items=items,
         )
     except SchemaError as error:
         raise ProviderError(f"yt-dlp returned data content-dl can't read: {error}") from error
@@ -278,7 +339,9 @@ class YtDlpProvider:
             # INFO: A channel URL is a playlist to yt-dlp. Listing entries flat, and only the first,
             # keeps a profile lookup to one page request instead of one per video.
             "extract_flat": "in_playlist",
-            "playlistend": 1,
+            # INFO: A carousel entry that is a still image has no formats. Without this, yt-dlp
+            # treats it as an error and drops the whole carousel.
+            "ignore_no_formats_error": True,
             **(options or {}),
         }
 
@@ -303,6 +366,11 @@ class YtDlpProvider:
             return None
 
     def extract(self, url: str, platform: str, want: list[str] | None = None) -> Post | Profile:
+        # INFO: Only the first entry of a YouTube channel page is listed, keeping a profile lookup
+        # to one page request. Elsewhere a playlist can be a carousel, whose entries all count.
+        if platform == "youtube":
+            self.options.setdefault("playlistend", 1)
+
         info = self.fetch_info(url)
         if not info:
             raise ProviderError("yt-dlp returned nothing for this URL")

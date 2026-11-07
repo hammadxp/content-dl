@@ -5,10 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from content_dl.providers.base import Provider, ProviderError
+from content_dl.providers.gallerydl import GalleryDlProvider
 from content_dl.providers.ytdlp import YtDlpProvider
 
 PROVIDERS: dict[str, Callable[[], Provider]] = {
     YtDlpProvider.name: YtDlpProvider,
+    GalleryDlProvider.name: GalleryDlProvider,
 }
 
 
@@ -21,4 +23,4 @@ def get_provider(name: str) -> Provider:
     return factory()
 
 
-__all__ = ["PROVIDERS", "Provider", "ProviderError", "YtDlpProvider", "get_provider"]
+__all__ = ["PROVIDERS", "GalleryDlProvider", "Provider", "ProviderError", "YtDlpProvider", "get_provider"]

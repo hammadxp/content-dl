@@ -1,0 +1,62 @@
+{
+  "_type": "playlist",
+  "id": "DAsTXK3JbrA",
+  "title": "Post by someone",
+  "description": "sunset at the beach",
+  "channel": "someone",
+  "uploader_id": "123456",
+  "uploader": "Some One",
+  "timestamp": 1793384520,
+  "like_count": 42,
+  "webpage_url": "https://www.instagram.com/p/DAsTXK3JbrA/",
+  "original_url": "https://www.instagram.com/p/DAsTXK3JbrA/",
+  "extractor_key": "Instagram",
+  "entries": [
+    {
+      "id": "DAsTXKCF4YB",
+      "title": "Video by someone",
+      "channel": "someone",
+      "uploader_id": "123456",
+      "timestamp": 1793384520,
+      "formats": [],
+      "thumbnails": [
+        {"url": "https://scontent.cdninstagram.com/v/t51.2885-15/111_s.jpg?stp=dst-jpg_e35_s640x640&oh=a1", "width": 640, "height": 800, "id": "0"},
+        {"url": "https://scontent.cdninstagram.com/v/t51.2885-15/111_n.jpg?stp=dst-jpg_e35_p1440x1440&oh=a2", "width": 1440, "height": 1800, "id": "1"}
+      ],
+      "thumbnail": "https://scontent.cdninstagram.com/v/t51.2885-15/111_n.jpg?stp=dst-jpg_e35_p1440x1440&oh=a2"
+    },
+    {
+      "id": "DAsTXKCF4YC",
+      "title": "Video by someone",
+      "channel": "someone",
+      "uploader_id": "123456",
+      "timestamp": 1793384520,
+      "duration": 14.2,
+      "ext": "mp4",
+      "width": 720,
+      "height": 1280,
+      "format_id": "dash-video+dash-audio",
+      "formats": [
+        {"format_id": "dash-audio", "url": "https://scontent.cdninstagram.com/o1/v/t16/f2/m69/222_a.mp4?oh=b1", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.5", "tbr": 70.2, "protocol": "https"},
+        {"format_id": "101", "url": "https://scontent.cdninstagram.com/o1/v/t16/f2/m86/222.mp4?efg=other&oh=b2", "ext": "mp4", "width": 720, "height": 1280, "vcodec": "avc1.64001f", "acodec": null, "protocol": "https"},
+        {"format_id": "dash-video", "url": "https://scontent.cdninstagram.com/o1/v/t16/f2/m69/222_v.mp4?oh=b3", "ext": "mp4", "width": 720, "height": 1280, "vcodec": "avc1.64001f", "acodec": "none", "tbr": 1450.8, "protocol": "https"}
+      ],
+      "thumbnails": [
+        {"url": "https://scontent.cdninstagram.com/v/t51.2885-15/222_cover.jpg?stp=dst-jpg_e15&oh=b4", "width": 720, "height": 1280, "id": "0"}
+      ],
+      "thumbnail": "https://scontent.cdninstagram.com/v/t51.2885-15/222_cover.jpg?stp=dst-jpg_e15&oh=b4"
+    },
+    {
+      "id": "DAsTXKCF4YD",
+      "title": "Video by someone",
+      "channel": "someone",
+      "uploader_id": "123456",
+      "timestamp": 1793384520,
+      "formats": [],
+      "thumbnails": [
+        {"url": "https://scontent.cdninstagram.com/v/t51.2885-15/333_n.jpg?stp=dst-jpg_e35_p1080x1080&oh=c1", "width": 1080, "height": 1350, "id": "0"}
+      ],
+      "thumbnail": "https://scontent.cdninstagram.com/v/t51.2885-15/333_n.jpg?stp=dst-jpg_e35_p1080x1080&oh=c1"
+    }
+  ]
+}

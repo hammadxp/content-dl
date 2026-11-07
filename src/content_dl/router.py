@@ -1,7 +1,7 @@
 """Maps a URL to a platform, and a platform to the providers to try for each item kind.
 
 The provider order follows the routing table in SPEC.md. Providers that aren't built yet
-(gallery-dl, cobalt, native, generic) are listed anyway and skipped at extraction time, so
+(cobalt, native, generic) are listed anyway and skipped at extraction time, so
 adding one later only means registering it. The table moves to a JSON config in milestone 6.
 """
 
@@ -129,6 +129,21 @@ def detect_platform(url: str) -> str:
             return platform
 
     return ".".join(labels[1:] if labels[0] == "www" and len(labels) > 2 else labels)
+
+
+def routes_for(platform: str) -> dict[str, list[str]]:
+    """Return a platform's row of the routing table. Unknown sites share one row."""
+    return ROUTES.get(platform, ROUTES[UNKNOWN_SITE])
+
+
+def columns_for(want: list[ItemKind] | None = None) -> list[str]:
+    """Return the routing columns to fill, metadata first, without duplicates.
+
+    >>> columns_for(["audio", "video", "avatar"])
+    ['metadata', 'video', 'avatar']
+    """
+    kinds = want if want is not None else KIND_COLUMNS
+    return list(dict.fromkeys(["metadata", *(KIND_COLUMNS[kind] for kind in kinds)]))
 
 
 def providers_for(platform: str, want: list[ItemKind] | None = None) -> list[str]:
