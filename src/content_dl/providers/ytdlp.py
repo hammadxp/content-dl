@@ -7,11 +7,12 @@ against saved output without touching the network.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
-from urllib.parse import urlparse
 
 from content_dl.providers.base import Cookies, ProviderError
-from content_dl.schema import Item, ItemKind, Post, Profile, SchemaError
+from content_dl.providers.common import ext_from_url as _ext_from_url
+from content_dl.schema import Item, ItemKind, Post, Profile, Result, SchemaError
 
 NAME = "yt-dlp"
 
@@ -66,22 +67,6 @@ def _is_audio_only(fmt: dict[str, Any]) -> bool:
 
 def _has_video(fmt: dict[str, Any]) -> bool:
     return fmt.get("vcodec") != "none" and fmt.get("ext") not in STORYBOARD_EXTS
-
-
-def _ext_from_url(url: str) -> str | None:
-    """Return the file extension in a URL's path.
-
-    >>> _ext_from_url("https://i.ytimg.com/vi/abc/hqdefault.jpg?sqp=xyz")
-    'jpg'
-    >>> _ext_from_url("https://example.com/image") is None
-    True
-    """
-    last = urlparse(url).path.rsplit("/", 1)[-1]
-    if "." not in last:
-        return None
-
-    ext = last.rsplit(".", 1)[-1].lower()
-    return ext if ext.isalnum() and len(ext) <= 5 else None
 
 
 def _number(value: Any) -> float | None:
@@ -347,6 +332,7 @@ def cookie_options(cookies: Cookies | None) -> dict[str, Any]:
 
 class YtDlpProvider:
     name = NAME
+    platforms = None
 
     def __init__(self, options: dict[str, Any] | None = None, cookies: Cookies | None = None) -> None:
         self.options = {
@@ -385,7 +371,9 @@ class YtDlpProvider:
         except ProviderError:
             return None
 
-    def extract(self, url: str, platform: str, want: list[str] | None = None) -> Post | Profile:
+    def extract(
+        self, url: str, platform: str, want: list[str] | None = None, known: Mapping[str, Result] | None = None
+    ) -> Post | Profile:
         # INFO: Only the first entry of a YouTube channel page is listed, keeping a profile lookup
         # to one page request. Elsewhere a playlist can be a carousel, whose entries all count.
         if platform == "youtube":

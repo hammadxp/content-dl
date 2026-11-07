@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -52,13 +53,21 @@ class Cookies:
 
 class Provider(Protocol):
     name: str
+    # The platforms the provider has extractors for, or None for any. extract() skips a provider
+    # listed in a route for a platform it doesn't cover, as if it weren't built yet.
+    platforms: frozenset[str] | None
 
-    def extract(self, url: str, platform: str, want: list[str] | None = None) -> Result:
+    def extract(
+        self, url: str, platform: str, want: list[str] | None = None, known: Mapping[str, Result] | None = None
+    ) -> Result:
         """Return everything the provider can find at ``url``, in content-dl's format.
 
         ``platform`` comes from the router and is copied into the result as-is. ``want`` lists
         the item kinds asked for (``None`` means all), so a provider can skip extra requests.
-        Raise ``ProviderError`` when the URL can't be handled.
+        ``known`` holds what the providers that ran earlier returned, by provider name, so a
+        provider can build on it (the native Instagram avatar lookup needs the uploader's
+        username, which a post URL doesn't contain). Raise ``ProviderError`` when the URL
+        can't be handled.
 
         Providers are built with the user's ``Cookies`` (or None) by the registry.
         """

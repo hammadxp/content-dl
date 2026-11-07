@@ -11,13 +11,13 @@ A platform without one gets the generic mapper, which only reads common field na
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any
-from urllib.parse import urlparse
 
 from content_dl.providers.base import Cookies, ProviderError
-from content_dl.schema import Item, ItemKind, Post, Profile, SchemaError
+from content_dl.providers.common import ext_from_url as _ext_from_url
+from content_dl.schema import Item, ItemKind, Post, Profile, Result, SchemaError
 
 NAME = "gallery-dl"
 
@@ -97,15 +97,6 @@ def _date(kwdict: Kwdict, *keys: str) -> datetime | str | None:
             return value
 
     return None
-
-
-def _ext_from_url(url: str) -> str | None:
-    last = urlparse(url).path.rsplit("/", 1)[-1]
-    if "." not in last:
-        return None
-
-    ext = last.rsplit(".", 1)[-1].lower()
-    return ext if ext.isalnum() and len(ext) <= 5 else None
 
 
 def _avatar(url: Any) -> Item | None:
@@ -331,6 +322,7 @@ def config_entries(cookies: Cookies | None) -> list[tuple[tuple[str, ...], str, 
 
 class GalleryDlProvider:
     name = NAME
+    platforms = None
 
     def __init__(self, cookies: Cookies | None = None) -> None:
         self.cookies = cookies
@@ -359,5 +351,7 @@ class GalleryDlProvider:
 
         return data_job.data
 
-    def extract(self, url: str, platform: str, want: list[str] | None = None) -> Post:
+    def extract(
+        self, url: str, platform: str, want: list[str] | None = None, known: Mapping[str, Result] | None = None
+    ) -> Post:
         return result_from_messages(self.fetch_messages(url), platform)

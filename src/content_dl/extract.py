@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from content_dl.merge import merge
-from content_dl.providers import PROVIDERS, Cookies, ProviderError, get_provider
+from content_dl.providers import Cookies, ProviderError, get_provider, provider_covers
 from content_dl.router import KIND_COLUMNS, columns_for, detect_platform, routes_for
 from content_dl.schema import ITEM_KINDS, ItemKind, Post, Profile, Result
 
@@ -71,7 +71,9 @@ class _Fetcher:
     def get(self, name: str) -> Result | None:
         if name not in self.results and name not in self.errors:
             try:
-                self.results[name] = get_provider(name, self.cookies).extract(self.url, self.platform, self.kinds)
+                # known is a copy, so a provider can't change what earlier providers returned.
+                provider = get_provider(name, self.cookies)
+                self.results[name] = provider.extract(self.url, self.platform, self.kinds, known=dict(self.results))
             except ProviderError as error:
                 self.errors[name] = str(error)
 
@@ -129,13 +131,13 @@ def extract(
 
     routes = routes_for(platform, with_cookies=bool(cookies))
     columns = columns_for(kinds)
-    if not any(name in PROVIDERS for column in columns for name in routes.get(column, [])):
+    if not any(provider_covers(name, platform) for column in columns for name in routes.get(column, [])):
         raise ExtractionError(f"no provider can handle {platform} yet")
 
     fetcher = _Fetcher(url, platform, kinds, cookies)
     for column in columns:
         for name in routes.get(column, []):
-            if name not in PROVIDERS:
+            if not provider_covers(name, platform):
                 continue
 
             result = fetcher.get(name)

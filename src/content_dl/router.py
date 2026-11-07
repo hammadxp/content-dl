@@ -1,8 +1,9 @@
 """Maps a URL to a platform, and a platform to the providers to try for each item kind.
 
 The provider order follows the routing table in SPEC.md. Providers that aren't built yet
-(cobalt, native, generic) are listed anyway and skipped at extraction time, so
-adding one later only means registering it. The table moves to a JSON config in milestone 6.
+(cobalt, generic), and native on platforms it has no extractor for (Snapchat), are listed
+anyway and skipped at extraction time, so adding one later only means registering it. The
+table moves to a JSON config in milestone 6.
 """
 
 from __future__ import annotations

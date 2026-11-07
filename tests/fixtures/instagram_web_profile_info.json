@@ -1,0 +1,17 @@
+{
+  "data": {
+    "user": {
+      "id": "123456",
+      "username": "someone",
+      "full_name": "Some One",
+      "biography": "beach person",
+      "is_private": false,
+      "profile_pic_url": "https://scontent.cdninstagram.com/v/t51.2885-19/av_n.jpg?stp=dst-jpg_s150x150&_nc_ht=x",
+      "profile_pic_url_hd": "https://scontent.cdninstagram.com/v/t51.2885-19/av_n.jpg?stp=dst-jpg_s320x320&_nc_ht=x",
+      "edge_followed_by": {
+        "count": 42
+      }
+    }
+  },
+  "status": "ok"
+}
