@@ -21,7 +21,13 @@ def isolated_config(request, monkeypatch):
     if request.node.name.startswith("test_live_"):
         return
 
-    for name in ("CONTENT_DL_ROUTES", "CONTENT_DL_COBALT_URL", "CONTENT_DL_COBALT_API_KEY"):
+    for name in (
+        "CONTENT_DL_ROUTES",
+        "CONTENT_DL_COBALT_URL",
+        "CONTENT_DL_COBALT_API_KEY",
+        "CONTENT_DL_JS_RUNTIMES",
+        "CONTENT_DL_FFMPEG_LOCATION",
+    ):
         monkeypatch.delenv(name, raising=False)
 
 

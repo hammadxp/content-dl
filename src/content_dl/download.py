@@ -20,7 +20,7 @@ from content_dl.embed import EmbedError, embed, tags_for
 from content_dl.extract import normalise_want
 from content_dl.providers.base import Cookies, ProviderError
 from content_dl.providers.native import http
-from content_dl.providers.ytdlp import cookie_options
+from content_dl.providers.ytdlp import cookie_options, host_options
 from content_dl.schema import Item, ItemKind, Post, Profile, Result
 from content_dl.template import DEFAULT_TEMPLATE, render
 
@@ -230,6 +230,7 @@ def _save_stream(run: _Run, result: Result, item: Item, owner: Owner) -> Downloa
         "formats": formats,
     }
     options = {
+        **host_options(),
         **cookie_options(run.cookies),
         "quiet": True,
         "no_warnings": True,

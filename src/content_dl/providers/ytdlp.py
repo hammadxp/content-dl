@@ -7,6 +7,7 @@ against saved output without touching the network.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from typing import Any
 
@@ -330,12 +331,54 @@ def cookie_options(cookies: Cookies | None) -> dict[str, Any]:
     return options
 
 
+JS_RUNTIMES_ENV = "CONTENT_DL_JS_RUNTIMES"
+FFMPEG_LOCATION_ENV = "CONTENT_DL_FFMPEG_LOCATION"
+
+
+def parse_js_runtimes(value: str) -> dict[str, dict[str, str]]:
+    """Parse yt-dlp's ``--js-runtimes`` syntax (``RUNTIME[:PATH]``, comma separated) into its option.
+
+    >>> parse_js_runtimes("quickjs:/data/app/lib/libqjs.so")
+    {'quickjs': {'path': '/data/app/lib/libqjs.so'}}
+    >>> parse_js_runtimes("deno, node")
+    {'deno': {}, 'node': {}}
+    """
+    runtimes: dict[str, dict[str, str]] = {}
+    for part in value.split(","):
+        name, _, path = part.strip().partition(":")
+        if name:
+            runtimes[name.lower()] = {"path": path} if path else {}
+
+    return runtimes
+
+
+def host_options() -> dict[str, Any]:
+    """yt-dlp options that describe the host rather than one request: its JS runtime and ffmpeg.
+
+    INFO: The Seal fork needs these on Android, where yt-dlp's default runtime (deno) doesn't exist
+    and YouTube needs a JS runtime. youtubedl-android ships QuickJS and ffmpeg as native libraries,
+    and passes the same two settings to yt-dlp. Read from the environment so every yt-dlp call,
+    in extraction and in downloads, sees them without threading them through ``extract()``.
+    """
+    options: dict[str, Any] = {}
+    runtimes = os.environ.get(JS_RUNTIMES_ENV, "").strip()
+    if runtimes:
+        options["js_runtimes"] = parse_js_runtimes(runtimes)
+
+    ffmpeg = os.environ.get(FFMPEG_LOCATION_ENV, "").strip()
+    if ffmpeg:
+        options["ffmpeg_location"] = ffmpeg
+
+    return options
+
+
 class YtDlpProvider:
     name = NAME
     platforms = None
 
     def __init__(self, options: dict[str, Any] | None = None, cookies: Cookies | None = None) -> None:
         self.options = {
+            **host_options(),
             **cookie_options(cookies),
             "quiet": True,
             "no_warnings": True,

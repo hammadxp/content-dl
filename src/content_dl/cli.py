@@ -7,6 +7,7 @@ or the kinds ``--want`` names, saved under ``-o`` with ``--embed-metadata`` if a
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Sequence
 
@@ -15,6 +16,7 @@ from content_dl.download import Download, download, kinds_to_extract
 from content_dl.extract import ExtractionError, extract, normalise_want
 from content_dl.providers.base import Cookies
 from content_dl.providers.cobalt import API_KEY_ENV, URL_ENV, CobaltInstance
+from content_dl.providers.ytdlp import FFMPEG_LOCATION_ENV, JS_RUNTIMES_ENV
 from content_dl.router import ROUTES_ENV, RouterError
 from content_dl.schema import Item, Result, result_to_json
 from content_dl.template import DEFAULT_TEMPLATE
@@ -168,6 +170,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="write metadata into the files (ffmpeg tags for video and audio, EXIF and XMP for images)",
     )
 
+    host = parser.add_argument_group("host", "passed to every yt-dlp call, with the same meaning as yt-dlp's flags")
+    host.add_argument(
+        "--js-runtimes",
+        metavar="RUNTIME[:PATH]",
+        help=f"JavaScript runtimes for yt-dlp, comma separated, such as quickjs:/path/to/qjs"
+        f" (default: {JS_RUNTIMES_ENV})",
+    )
+    host.add_argument(
+        "--ffmpeg-location", metavar="PATH", help=f"ffmpeg binary or its folder (default: {FFMPEG_LOCATION_ENV})"
+    )
+
     auth = parser.add_argument_group(
         "cookies",
         "optional; used by every provider and preferred routes when given. Heavy use with your cookies can get"
@@ -203,6 +216,13 @@ def _report(outcome: Download) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     downloading = not (args.dump_single_json or args.list_formats)
+    # INFO: The yt-dlp provider and the downloader read these from the environment (see
+    # host_options), so the flags only need to set it for this process.
+    if args.js_runtimes:
+        os.environ[JS_RUNTIMES_ENV] = args.js_runtimes
+
+    if args.ffmpeg_location:
+        os.environ[FFMPEG_LOCATION_ENV] = args.ffmpeg_location
 
     try:
         want = normalise_want(args.want.split(",")) if args.want else None

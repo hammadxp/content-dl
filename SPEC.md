@@ -156,6 +156,7 @@ The CLI copies yt-dlp's flags where they mean the same thing, so it feels famili
 | `content-dl --cookies cookies.txt URL` | Use cookies from a Netscape cookies.txt file, and prefer logged-in routes |
 | `content-dl --cookies-from-browser firefox URL` | Same, reading the cookies from a browser's store (`BROWSER[:PROFILE]`) |
 | `content-dl --embed-metadata URL` | Write metadata into the files (ffmpeg tags for video and audio, EXIF/XMP for images) |
+| `content-dl --js-runtimes quickjs:PATH --ffmpeg-location PATH URL` | Tell yt-dlp which JS runtime and ffmpeg to use, as its own flags do (the Seal fork passes youtubedl-android's) |
 | `content-dl serve --port 8080` | Start the optional HTTP server |
 
 **HTTP endpoints** (for `content-dl serve`)
@@ -171,7 +172,7 @@ content-dl runs on the phone, embedded in the Seal fork, the same way yt-dlp run
 
 **Why on the phone:** requests go out from your mobile IP, which Instagram and Threads treat as a normal user. A server on a datacenter IP gets rate-limited much sooner.
 
-**Runtime:** Seal uses youtubedl-android, which bundles a Python runtime. content-dl and gallery-dl are pure Python and would be added to that bundle. If that runtime turns out to be missing packages content-dl needs (gallery-dl needs `requests`), the fallback is Chaquopy.
+**Runtime:** Seal uses youtubedl-android, which bundles CPython 3.11 and starts yt-dlp as `libpython.so <yt-dlp zipapp> ARGS`. Its site-packages holds only `mutagen` and `Cryptodome`, so content-dl ships as its own zipapp, `content-dl.pyz` (built by `scripts/build_pyz.py`), that carries gallery-dl, `requests` and their pure-Python dependencies. The fork starts it the same way, with the same environment, and puts Seal's own yt-dlp zipapp on `PYTHONPATH`, so content-dl imports the copy Seal already keeps up to date. It also passes youtubedl-android's QuickJS and ffmpeg to yt-dlp with `--js-runtimes` and `--ffmpeg-location` (also `CONTENT_DL_JS_RUNTIMES` and `CONTENT_DL_FFMPEG_LOCATION`), as youtubedl-android does for yt-dlp. Chaquopy is no longer needed as a fallback.
 
 **Share-sheet flow in the fork**
 
@@ -205,6 +206,7 @@ Each milestone can be tested from the command line on desktop. Seal isn't touche
    - Done when: turning off yt-dlp for a platform in the config makes cobalt serve that platform's video.
 7. [ ] **Android.** content-dl running inside the Seal fork's Python runtime.
    - Done when: the fork prints `extract()` output for a shared URL on a real phone.
+   - Status (Nov 7, 2026): on desktop, the zipapp runs on CPython 3.11 with nothing but the standard library and yt-dlp's release zipapp on `PYTHONPATH`, and extracts YouTube that way. The fork's `content-dl` branch adds an "Extract with content-dl" share target that prints the result on screen and to Logcat (tag `content-dl`). Still to check on a real phone.
 8. [ ] **Seal fork UI.** Share-sheet picker, downloads, history.
    - Done when: sharing an Instagram post lets you pick and save individual images and the avatar.
 
@@ -212,12 +214,13 @@ Each milestone can be tested from the command line on desktop. Seal isn't touche
 
 | Risk or question | Impact | Plan |
 | --- | --- | --- |
-| Does youtubedl-android's Python runtime include `requests` and the other packages gallery-dl needs? | Blocks gallery-dl on Android | Check at the start of milestone 7; fall back to Chaquopy |
+| Does youtubedl-android's Python runtime include `requests` and the other packages gallery-dl needs? | Blocks gallery-dl on Android | Checked in milestone 7 (youtubedl-android 0.17.3): CPython 3.11 with only `mutagen` and `Cryptodome`. Solved by bundling the pure-Python dependencies in `content-dl.pyz` |
 | Heavy use of the user's cookies can get their account rate-limited or flagged | The user's own account is at risk | Cookies stay opt-in; say so in the CLI help and the fork's settings. Note that yt-dlp writes refreshed cookies back to a `--cookies` file |
-| `curl_cffi` (yt-dlp's browser impersonation) is a compiled package; its only Android wheel is arm64 for Python 3.13+ | yt-dlp loses the logged-out Instagram GraphQL route on Android and falls back to the post page | Check in milestone 7; yt-dlp works without it, so leave it out of the Android bundle if it won't install |
+| `curl_cffi` (yt-dlp's browser impersonation) is a compiled package; its only Android wheel is arm64 for Python 3.13+ | yt-dlp loses the logged-out Instagram GraphQL route on Android and falls back to the post page. The native Threads provider also loses it: with plain `requests`, a desktop test (Nov 7, 2026) got no embedded profile data from Threads | Checked in milestone 7: the runtime is 3.11, so `curl_cffi` is left out of the zipapp. Check Threads from the phone; if it still fails, decide how the native provider should reach Threads without `curl_cffi` |
 | Instagram and Threads change their page JSON and endpoints without notice | Native providers break | Keep native providers small, test them against saved pages, ship fixes as runtime updates |
 | Rate limits on Instagram and Threads, even from a mobile IP | Requests fail after heavy use | Cache results, back off on errors, fall back to the next provider |
 | cobalt's public instance requires bot verification | Can't rely on it | Self-host it; treat it as optional |
 | gallery-dl's `extractor.module-sources` option for loading extra extractors | Decides whether Threads can be a gallery-dl extractor | Decided in milestone 4: Threads is a content-dl native provider, which needs no gallery-dl extension point |
 | Instagram's `web_profile_info` answered HTTP 404 to a logged-out desktop request (Nov 7, 2026), and the logged-out profile page was an error page | Instagram avatars may need the user's cookies, or another route | Check from a mobile IP and with cookies; if it stays closed, find another logged-out source for the avatar |
+| Latest yt-dlp needs Python 3.11 or newer | content-dl's `requires-python = ">=3.10"` is looser than its main dependency | The phone's runtime is 3.11, so Android is fine; raise `requires-python` to 3.11 when convenient |
 | Licensing: yt-dlp is Unlicense, gallery-dl GPL-2.0, cobalt AGPL-3.0, Seal GPL-3.0 | Affects how content-dl can be licensed and shipped | Confirm each license before the first release |
