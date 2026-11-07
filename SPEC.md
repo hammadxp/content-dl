@@ -199,7 +199,7 @@ Each milestone can be tested from the command line on desktop. Seal isn't touche
    - Done when: an Instagram carousel returns every image and video once, with uploader and upload date filled.
 4. [ ] **Native providers.** Threads posts and Instagram profile pictures.
    - Done when: a Threads carousel and an Instagram profile URL both return complete results.
-5. [ ] **Downloader.** `--want`, `-o` templates, `--embed-metadata`.
+5. [x] **Downloader.** `--want`, `-o` templates, `--embed-metadata`.
    - Done when: one command saves a mixed post's files with correct names and embedded metadata.
 6. [ ] **cobalt provider and the routing config.** Fallbacks driven by the JSON table.
    - Done when: turning off yt-dlp for a platform in the config makes cobalt serve that platform's video.

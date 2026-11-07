@@ -1,7 +1,9 @@
-"""HTTP for the native providers: one GET with the user's cookies, errors as ProviderError."""
+"""HTTP for the native providers and the downloader: GETs with the user's cookies, errors as ProviderError."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from http.cookiejar import CookieJar
 from typing import Any
@@ -9,6 +11,7 @@ from typing import Any
 from content_dl.providers.base import Cookies, ProviderError
 
 TIMEOUT_SECONDS = 20
+CHUNK_BYTES = 1 << 16
 
 # INFO: Used only when curl_cffi isn't installed. With curl_cffi, its browser profile sets a
 # matching User-Agent and TLS fingerprint, the same way yt-dlp's impersonation does.
@@ -89,3 +92,52 @@ def get(url: str, *, headers: dict[str, str] | None = None, cookies: dict[str, s
         raise ProviderError(f"native: request to {url} failed: {error}") from error
 
     return Response(status=response.status_code, url=str(response.url), text=response.text)
+
+
+@dataclass(frozen=True)
+class Stream:
+    url: str
+    content_type: str | None
+    chunks: Iterator[bytes]
+
+
+@contextmanager
+def stream(
+    url: str, *, headers: dict[str, str] | None = None, cookies: dict[str, str] | None = None
+) -> Iterator[Stream]:
+    """GET a file in chunks, for the downloader. A status of 400 or more raises ProviderError."""
+    options: dict[str, Any] = {
+        "headers": dict(headers or {}),
+        "cookies": cookies or {},
+        # INFO: (connect, read) rather than one total, so a large video isn't cut off after 20 seconds.
+        "timeout": (TIMEOUT_SECONDS, TIMEOUT_SECONDS),
+        "stream": True,
+    }
+
+    try:
+        from curl_cffi import requests as client
+
+        options["impersonate"] = IMPERSONATE
+        errors: tuple[type[BaseException], ...] = (client.RequestsError,)
+    except ImportError:
+        import requests as client
+
+        options["headers"].setdefault("User-Agent", USER_AGENT)
+        errors = (client.RequestException,)
+
+    try:
+        response = client.get(url, **options)
+    except errors as error:
+        raise ProviderError(f"request to {url} failed: {error}") from error
+
+    try:
+        if response.status_code >= 400:
+            raise ProviderError(f"{url} answered HTTP {response.status_code}")
+
+        content_type = response.headers.get("Content-Type")
+        try:
+            yield Stream(url=str(response.url), content_type=content_type, chunks=response.iter_content(CHUNK_BYTES))
+        except errors as error:
+            raise ProviderError(f"download from {url} failed: {error}") from error
+    finally:
+        response.close()

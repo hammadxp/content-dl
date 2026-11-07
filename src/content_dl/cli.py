@@ -1,7 +1,7 @@
 """content-dl command line. Flags copy yt-dlp's where they mean the same thing.
 
-Built so far: ``-J`` (print the result as JSON) and ``-F`` (list items and formats).
-Downloading, ``-f``, ``-o`` and ``--embed-metadata`` arrive with the downloader (milestone 5).
+Without ``-J`` or ``-F`` the URL's items are downloaded: the defaults (every video and image),
+or the kinds ``--want`` names, saved under ``-o`` with ``--embed-metadata`` if asked.
 """
 
 from __future__ import annotations
@@ -11,10 +11,12 @@ import sys
 from collections.abc import Sequence
 
 from content_dl import __version__
-from content_dl.extract import ExtractionError, extract
+from content_dl.download import Download, download, kinds_to_extract
+from content_dl.extract import ExtractionError, extract, normalise_want
 from content_dl.providers.base import Cookies
 from content_dl.router import RouterError
 from content_dl.schema import Item, Result, result_to_json
+from content_dl.template import DEFAULT_TEMPLATE
 
 
 def format_duration(seconds: float | None) -> str:
@@ -132,7 +134,28 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--want", metavar="KINDS", help="only these item kinds, comma separated (images,avatar)")
     parser.add_argument("--provider", metavar="NAME", help="force one provider, for debugging")
 
-    auth = parser.add_argument_group("cookies", "optional; used by every provider and preferred routes when given")
+    files = parser.add_argument_group("download")
+    files.add_argument(
+        "-f", "--format", metavar="FORMAT", help='yt-dlp format selection for video items, such as "bv*+ba/b"'
+    )
+    files.add_argument(
+        "-o",
+        "--output",
+        metavar="TEMPLATE",
+        default=DEFAULT_TEMPLATE,
+        help="output file name template; nested fields with dots, fallbacks with commas (default: %(default)s)",
+    )
+    files.add_argument(
+        "--embed-metadata",
+        action="store_true",
+        help="write metadata into the files (ffmpeg tags for video and audio, EXIF and XMP for images)",
+    )
+
+    auth = parser.add_argument_group(
+        "cookies",
+        "optional; used by every provider and preferred routes when given. Heavy use with your cookies can get"
+        " your account rate-limited or flagged",
+    )
     auth.add_argument("--cookies", metavar="FILE", help="Netscape cookies.txt file to read cookies from")
     auth.add_argument(
         "--cookies-from-browser",
@@ -142,26 +165,60 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _write(text: str) -> None:
+    # INFO: Windows consoles default to a legacy code page; write UTF-8 so captions with emoji don't crash.
+    sys.stdout.buffer.write((text + "\n").encode("utf-8"))
+    sys.stdout.flush()
+
+
+def _report(outcome: Download) -> None:
+    label = outcome.item.kind if outcome.item.index is None else f"{outcome.item.kind} {outcome.item.index}"
+    if outcome.status == "failed":
+        print(f"content-dl: error: {label}: {outcome.error}", file=sys.stderr)
+        return
+
+    note = " (already downloaded)" if outcome.status == "exists" else ""
+    _write(f"[download] {label}: {outcome.path}{note}")
+    if outcome.warning:
+        print(f"content-dl: warning: {label}: {outcome.warning}", file=sys.stderr)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    downloading = not (args.dump_single_json or args.list_formats)
 
-    if not (args.dump_single_json or args.list_formats):
-        print("content-dl: downloading isn't built yet, use -J or -F", file=sys.stderr)
-        return 2
-
-    want = args.want.split(",") if args.want else None
     try:
+        want = normalise_want(args.want.split(",")) if args.want else None
         cookies = Cookies(file=args.cookies, browser=args.cookies_from_browser)
-        result = extract(args.url, want=want, provider=args.provider, cookies=cookies or None)
+        extract_want = kinds_to_extract(want) if downloading else want
+        result = extract(args.url, want=extract_want, provider=args.provider, cookies=cookies or None)
     except (ExtractionError, RouterError, ValueError) as error:
         print(f"content-dl: error: {error}", file=sys.stderr)
         return 1
 
-    output = result_to_json(result) if args.dump_single_json else render_listing(result)
-    # INFO: Windows consoles default to a legacy code page; write UTF-8 so captions with emoji don't crash.
-    sys.stdout.buffer.write((output + "\n").encode("utf-8"))
-    sys.stdout.flush()
-    return 0
+    if args.dump_single_json:
+        _write(result_to_json(result))
+        return 0
+
+    if args.list_formats:
+        _write(render_listing(result))
+        return 0
+
+    outcomes = download(
+        result,
+        want=want,
+        output=args.output,
+        format=args.format,
+        embed_metadata=args.embed_metadata,
+        cookies=cookies or None,
+        on_item=_report,
+    )
+
+    if not outcomes:
+        print("content-dl: error: nothing to download; try -F to see what was found, or --want", file=sys.stderr)
+        return 1
+
+    return 1 if any(outcome.status == "failed" for outcome in outcomes) else 0
 
 
 if __name__ == "__main__":

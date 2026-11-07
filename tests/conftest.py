@@ -1,4 +1,4 @@
-"""Keep the offline suite offline: native providers can't reach the network outside live tests.
+"""Keep the offline suite offline: native providers and the downloader can't reach the network outside live tests.
 
 Live tests are named ``test_live_*`` and are skipped unless CONTENT_DL_LIVE=1.
 """
@@ -18,3 +18,4 @@ def offline_native_http(request, monkeypatch):
         raise ProviderError(f"native: network is off in tests ({url})")
 
     monkeypatch.setattr(http, "get", no_network)
+    monkeypatch.setattr(http, "stream", no_network)

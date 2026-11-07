@@ -272,11 +272,6 @@ def test_list_formats_shows_items_and_formats(offline_ytdlp, capsys) -> None:
     assert "395" in out
 
 
-def test_download_mode_is_not_built_yet(capsys) -> None:
-    assert main([VIDEO_URL]) == 2
-    assert "use -J or -F" in capsys.readouterr().err
-
-
 def test_cli_reports_bad_urls(capsys) -> None:
     assert main(["-J", "not a url"]) == 1
     assert "error" in capsys.readouterr().err

@@ -1,0 +1,325 @@
+"""Save a result's items to disk: the step after ``extract()``.
+
+Plain files (images, thumbnails, avatars, and videos a provider gives as one URL) are fetched
+directly. Stream items (``formats``) go to yt-dlp, which picks the formats, downloads and
+merges them with ffmpeg. yt-dlp gets the formats already in the result, so nothing is
+extracted twice; stream URLs expire within hours, so download soon after extracting.
+"""
+
+from __future__ import annotations
+
+import copy
+import mimetypes
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Literal
+from urllib.parse import urlparse
+
+from content_dl.embed import EmbedError, embed, tags_for
+from content_dl.extract import normalise_want
+from content_dl.providers.base import Cookies, ProviderError
+from content_dl.providers.native import http
+from content_dl.providers.ytdlp import cookie_options
+from content_dl.schema import Item, ItemKind, Post, Profile, Result
+from content_dl.template import DEFAULT_TEMPLATE, render
+
+Owner = Post | Profile
+Status = Literal["saved", "exists", "failed"]
+
+# Audio items hold only audio-only formats, so the best of them is the right pick.
+AUDIO_FORMAT = "ba/b"
+
+
+class _SilentLogger:
+    """yt-dlp prints errors even when quiet; content-dl reports them once, per item, instead."""
+
+    def debug(self, message: str) -> None:
+        pass
+
+    info = warning = error = debug
+
+
+@dataclass
+class Download:
+    """What happened to one item. ``warning`` is set when the file saved but its metadata didn't."""
+
+    item: Item
+    owner: Owner
+    status: Status
+    path: Path | None = None
+    error: str | None = None
+    warning: str | None = None
+
+
+@dataclass
+class _Run:
+    output: str
+    format: str | None
+    embed_metadata: bool
+    cookies: Cookies | None
+    used: set[Path] = field(default_factory=set)
+    jar: Any = None
+
+
+def _avatar_with_owner(result: Result) -> tuple[Item, Owner] | None:
+    if isinstance(result, Profile):
+        return (result.avatar, result) if result.avatar else None
+
+    uploader = result.uploader
+    return (uploader.avatar, uploader) if uploader and uploader.avatar else None
+
+
+def select_items(result: Result, want: Iterable[str] | None = None) -> list[tuple[Item, Owner]]:
+    """Pick the items to save, each with the object whose metadata it carries.
+
+    With ``want``, every item of those kinds (and the avatar, if asked). Without it, the
+    defaults: every video and image, audio only where its post has no video (the video's
+    download already includes the audio), and the avatar of a profile with nothing else.
+    """
+    kinds = normalise_want(want)
+    avatar = _avatar_with_owner(result)
+
+    if kinds is not None:
+        chosen = [(item, result) for item in result.items if item.kind in kinds]
+        if "avatar" in kinds and avatar:
+            chosen.append(avatar)
+
+        return chosen
+
+    video_indexes = {item.index for item in result.items if item.kind == "video"}
+    chosen = [
+        (item, result)
+        for item in result.items
+        if item.kind in ("video", "image") or (item.kind == "audio" and item.index not in video_indexes)
+    ]
+    if not chosen and isinstance(result, Profile) and avatar:
+        chosen.append(avatar)
+
+    return chosen
+
+
+def template_context(result: Result, item: Item) -> dict[str, Any]:
+    """The fields an output template can use: the result's, then the item's.
+
+    The item's own ``url`` is ``item.url``, since ``url`` is the post's. A top-level profile is
+    also its own ``uploader``, so one template works for post and profile URLs alike.
+    """
+    context = result.to_dict()
+    context.pop("items", None)
+    if isinstance(result, Profile):
+        context["uploader"] = result.to_dict(as_uploader=True)
+
+    item_fields = item.to_dict()
+    context.update({key: value for key, value in item_fields.items() if key not in ("url", "formats", "extra")})
+    context["item"] = item_fields
+    return context
+
+
+def _unique(path: Path, used: set[Path]) -> Path:
+    """Add `` (2)`` and up when two items in one run render the same name."""
+    candidate = path
+    counter = 2
+    while candidate in used:
+        candidate = path.with_name(f"{path.stem} ({counter}){path.suffix}")
+        counter += 1
+
+    used.add(candidate)
+    return candidate
+
+
+def _ext_from_type(content_type: str | None) -> str | None:
+    """
+    >>> _ext_from_type("image/jpeg")
+    'jpg'
+    >>> _ext_from_type(None) is None
+    True
+    """
+    if not content_type:
+        return None
+
+    guessed = mimetypes.guess_extension(content_type.split(";")[0].strip())
+    return guessed.lstrip(".") if guessed else None
+
+
+def _site_cookies(run: _Run, url: str) -> dict[str, str]:
+    if not run.cookies:
+        return {}
+
+    if run.jar is None:
+        run.jar = http.load_cookie_jar(run.cookies)
+
+    host = urlparse(url).hostname or ""
+    return http.cookies_for(run.jar, ".".join(host.split(".")[-2:]))
+
+
+def _save_file(run: _Run, result: Result, item: Item, owner: Owner) -> Download:
+    assert item.url is not None
+    context = template_context(result, item)
+    path = None
+    if item.ext:
+        path = _unique(render(run.output, context), run.used)
+        if path.exists():
+            return Download(item=item, owner=owner, status="exists", path=path)
+
+    with http.stream(item.url, cookies=_site_cookies(run, item.url)) as response:
+        if path is None:
+            context["ext"] = _ext_from_type(response.content_type) or "bin"
+            path = _unique(render(run.output, context), run.used)
+            if path.exists():
+                return Download(item=item, owner=owner, status="exists", path=path)
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        part = path.with_name(path.name + ".part")
+        try:
+            with part.open("wb") as file:
+                for chunk in response.chunks:
+                    file.write(chunk)
+
+            part.replace(path)
+        except BaseException:
+            part.unlink(missing_ok=True)
+            raise
+
+    return Download(item=item, owner=owner, status="saved", path=path)
+
+
+def _stream_formats(result: Result, item: Item) -> list[dict[str, Any]]:
+    """A video's formats plus the audio formats at its index, so yt-dlp can merge the best pair.
+
+    INFO: Segmented DASH formats need their fragment list, which a result doesn't keep (it
+    would multiply the JSON's size), so they're left out; yt-dlp picks from the rest.
+    """
+    formats = list(item.formats or [])
+    if item.kind == "video":
+        for other in result.items:
+            if other.kind == "audio" and other.index == item.index and other.provider == item.provider:
+                formats += other.formats or []
+
+    usable = [fmt for fmt in formats if fmt.get("url") and not str(fmt.get("protocol", "")).startswith("http_dash")]
+    return copy.deepcopy(usable)
+
+
+def _ytdlp_template(path: Path, ext: str | None) -> str:
+    """yt-dlp's outtmpl for an already rendered path: its own ``%(ext)s``, every other % escaped."""
+    name = path.name
+    if ext and name.endswith("." + ext):
+        name = name[: -len(ext) - 1]
+
+    return str(path.with_name(name.replace("%", "%%") + ".%(ext)s"))
+
+
+def _save_stream(run: _Run, result: Result, item: Item, owner: Owner) -> Download:
+    import yt_dlp
+
+    formats = _stream_formats(result, item)
+    if not formats:
+        raise ProviderError("no downloadable stream in this item's formats")
+
+    path = _unique(render(run.output, template_context(result, item)), run.used)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    info = {
+        "id": result.id or "content",
+        # yt-dlp only uses the title in its messages; the file name comes from the content-dl template.
+        "title": getattr(result, "title", None) or result.id or "content",
+        "extractor": "content-dl",
+        "extractor_key": "ContentDl",
+        "webpage_url": result.url,
+        "duration": item.duration,
+        "formats": formats,
+    }
+    options = {
+        **cookie_options(run.cookies),
+        "quiet": True,
+        "no_warnings": True,
+        "noprogress": True,
+        "logger": _SilentLogger(),
+        "outtmpl": {"default": _ytdlp_template(path, item.ext)},
+    }
+    chosen_format = run.format if item.kind == "video" else AUDIO_FORMAT
+    if chosen_format:
+        options["format"] = chosen_format
+
+    try:
+        with yt_dlp.YoutubeDL(options) as ydl:
+            done = ydl.process_ie_result(info, download=True)
+    except yt_dlp.utils.DownloadError as error:
+        raise ProviderError(str(error).removeprefix("ERROR: ").strip()) from error
+
+    downloads = (done or {}).get("requested_downloads") or []
+    saved = Path(downloads[0]["filepath"]) if downloads and downloads[0].get("filepath") else None
+    if saved is None or not saved.exists():
+        raise ProviderError("yt-dlp didn't save a file")
+
+    run.used.add(saved)
+    return Download(item=item, owner=owner, status="saved", path=saved)
+
+
+def _save(run: _Run, result: Result, item: Item, owner: Owner) -> Download:
+    if item.formats:
+        saved = _save_stream(run, result, item, owner)
+    elif item.url:
+        saved = _save_file(run, result, item, owner)
+    else:
+        return Download(item=item, owner=owner, status="failed", error="no file or stream URL to download")
+
+    if run.embed_metadata and saved.status == "saved" and saved.path:
+        try:
+            embed(saved.path, tags_for(owner), item.kind)
+        except (EmbedError, OSError, ValueError) as error:
+            saved.warning = f"metadata not embedded: {error}"
+
+    return saved
+
+
+def download(
+    result: Result,
+    want: Iterable[str] | None = None,
+    output: str = DEFAULT_TEMPLATE,
+    format: str | None = None,
+    embed_metadata: bool = False,
+    cookies: Cookies | None = None,
+    on_item: Callable[[Download], None] | None = None,
+) -> list[Download]:
+    """Save the items of an extracted result and report what happened to each.
+
+    ``want`` picks item kinds as ``extract()`` does; without it the defaults of
+    ``select_items`` apply. ``output`` is a yt-dlp style file name template (see
+    ``content_dl.template``). ``format`` is a yt-dlp format selection for video items.
+    ``embed_metadata`` writes the post's (or, for an avatar, the profile's) metadata into each
+    file. One failed item doesn't stop the others; ``on_item`` is called as each one finishes.
+
+    For the best video quality, extract with audio included: a video item's download merges
+    in the audio formats at the same index.
+    """
+    run = _Run(output=output, format=format, embed_metadata=embed_metadata, cookies=cookies)
+    downloads: list[Download] = []
+    for item, owner in select_items(result, want):
+        try:
+            outcome = _save(run, result, item, owner)
+        except (ProviderError, OSError, ValueError) as error:
+            outcome = Download(item=item, owner=owner, status="failed", error=str(error))
+
+        downloads.append(outcome)
+        if on_item:
+            on_item(outcome)
+
+    return downloads
+
+
+def kinds_to_extract(want: Iterable[str] | None) -> list[ItemKind] | None:
+    """The kinds to ask ``extract()`` for so the downloader can save ``want``.
+
+    A video needs its audio formats to merge the best pair, even when only videos are saved.
+
+    >>> kinds_to_extract(["videos"])
+    ['video', 'audio']
+    >>> kinds_to_extract(None) is None
+    True
+    """
+    kinds = normalise_want(want)
+    if kinds is not None and "video" in kinds and "audio" not in kinds:
+        kinds.append("audio")
+
+    return kinds
