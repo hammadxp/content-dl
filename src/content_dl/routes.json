@@ -13,7 +13,10 @@
     "tiktok.com": "tiktok",
     "reddit.com": "reddit",
     "redd.it": "reddit",
-    "snapchat.com": "snapchat"
+    "snapchat.com": "snapchat",
+    "facebook.com": "facebook",
+    "fb.com": "facebook",
+    "fb.watch": "facebook"
   },
   "routes": {
     "youtube": {
@@ -58,6 +61,13 @@
       "avatar": ["gallery-dl"],
       "metadata": ["gallery-dl", "yt-dlp"]
     },
+    "facebook": {
+      "video": ["yt-dlp", "cobalt"],
+      "images": ["gallery-dl", "native"],
+      "thumbnail": ["yt-dlp"],
+      "avatar": ["gallery-dl"],
+      "metadata": ["native", "yt-dlp", "gallery-dl"]
+    },
     "snapchat": {
       "video": ["cobalt"],
       "images": ["cobalt"],
@@ -76,6 +86,7 @@
   "routes_with_cookies": {
     "instagram": {
       "images": ["gallery-dl", "yt-dlp", "cobalt"],
+      "avatar": ["gallery-dl", "native"],
       "metadata": ["gallery-dl", "yt-dlp"]
     }
   },

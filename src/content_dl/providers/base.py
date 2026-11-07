@@ -63,7 +63,7 @@ class Provider(Protocol):
         """Return everything the provider can find at ``url``, in content-dl's format.
 
         ``platform`` comes from the router and is copied into the result as-is. ``want`` lists
-        the item kinds asked for (``None`` means all), so a provider can skip extra requests.
+        the media types asked for (``None`` means all), so a provider can skip extra requests.
         ``known`` holds what the providers that ran earlier returned, by provider name, so a
         provider can build on it (the native Instagram avatar lookup needs the uploader's
         username, which a post URL doesn't contain). Raise ``ProviderError`` when the URL

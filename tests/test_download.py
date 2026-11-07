@@ -1,4 +1,4 @@
-"""Milestones 5 and 8: the downloader, ``-o`` templates, ``--want``, ``--items`` and ``--embed-metadata``.
+"""Milestones 5 and 8: the downloader, file name templates, ``--media-types``, ``--items`` and ``--embed-metadata``.
 
 Offline: files come from a fake HTTP stream, and yt-dlp's download step is replaced by one
 that copies a small local video. The ffmpeg tests make that video with ffmpeg and are skipped
@@ -18,7 +18,7 @@ import pytest
 import yt_dlp
 
 from content_dl import Item, Post, Profile, download, result_to_json, select_items
-from content_dl.cli import main
+from content_dl.cli import main, missing_message
 from content_dl.download import parse_item_picks, template_context
 from content_dl.embed import Tags, build_exif, build_xmp, embed_image_tags, tags_for
 from content_dl.providers import GalleryDlProvider, YtDlpProvider
@@ -33,8 +33,8 @@ JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xf
 
 
 def png_bytes() -> bytes:
-    def chunk(kind: bytes, payload: bytes) -> bytes:
-        return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload))
+    def chunk(tag: bytes, payload: bytes) -> bytes:
+        return struct.pack(">I", len(payload)) + tag + payload + struct.pack(">I", zlib.crc32(tag + payload))
 
     header = struct.pack(">IIBBBBB", 1, 1, 8, 0, 0, 0, 0)
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(b"\0\0")) + chunk(b"IEND", b"")
@@ -65,7 +65,7 @@ def carousel_post() -> Post:
         username="someone",
         name="Some One",
         url="https://www.instagram.com/someone/",
-        avatar=Item(kind="avatar", url="https://cdn.example.com/avatar.jpg", ext="jpg", provider="native"),
+        avatar=Item(media_type="avatar", url="https://cdn.example.com/avatar.jpg", ext="jpg", provider="native"),
     )
     video_formats = [{"format_id": "720", "url": "https://cdn.example.com/v.mp4", "ext": "mp4", "vcodec": "avc1"}]
     audio_formats = [{"format_id": "a", "url": "https://cdn.example.com/a.m4a", "ext": "m4a", "vcodec": "none"}]
@@ -77,10 +77,10 @@ def carousel_post() -> Post:
         url=POST_URL,
         uploader=uploader,
         items=[
-            Item(index=1, kind="image", url="https://cdn.example.com/1.jpg?stp=x", ext="jpg", provider="gallery-dl"),
-            Item(index=2, kind="video", ext="mp4", formats=video_formats, provider="yt-dlp"),
-            Item(index=2, kind="audio", ext="m4a", formats=audio_formats, provider="yt-dlp"),
-            Item(index=2, kind="thumbnail", url="https://cdn.example.com/2.jpg", ext="jpg", provider="yt-dlp"),
+            Item(index=1, media_type="image", url="https://cdn.example.com/1.jpg?stp=x", ext="jpg", provider="gallery-dl"),
+            Item(index=2, media_type="video", ext="mp4", formats=video_formats, provider="yt-dlp"),
+            Item(index=2, media_type="audio", ext="m4a", formats=audio_formats, provider="yt-dlp"),
+            Item(index=2, media_type="thumbnail", url="https://cdn.example.com/2.jpg", ext="jpg", provider="yt-dlp"),
         ],
     )
 
@@ -119,7 +119,11 @@ def fake_ytdlp_download(monkeypatch, tmp_path):
     source = {"path": None}
 
     def fake_process(self, info, download=True):
-        calls.append({"format": self.params.get("format"), "formats": [fmt["format_id"] for fmt in info["formats"]]})
+        call = {"format": self.params.get("format"), "formats": [fmt["format_id"] for fmt in info["formats"]]}
+        if self.params.get("format_sort"):
+            call["format_sort"] = self.params["format_sort"]
+
+        calls.append(call)
         ext = info["formats"][0]["ext"]
         target = Path(self.params["outtmpl"]["default"].replace("%(ext)s", ext).replace("%%", "%"))
         if source["path"]:
@@ -155,8 +159,8 @@ def test_spec_template_with_nested_fields() -> None:
 
 
 def test_profile_is_its_own_uploader_in_templates() -> None:
-    profile = Profile(platform="instagram", id="1", username="someone", avatar=Item(kind="avatar", ext="jpg"))
-    template = "%(uploader.username)s/%(title,description,username)s %(kind)s%(index& {})s.%(ext)s"
+    profile = Profile(platform="instagram", id="1", username="someone", avatar=Item(media_type="avatar", ext="jpg"))
+    template = "%(uploader.username)s/%(title,description,username)s %(media_type)s%(index& {})s.%(ext)s"
 
     assert render(template, template_context(profile, profile.avatar)) == Path("someone/someone avatar.jpg")
 
@@ -187,34 +191,34 @@ def test_long_names_are_cut_but_keep_the_extension() -> None:
 def test_default_selection_is_videos_and_images() -> None:
     post = carousel_post()
 
-    assert [(item.index, item.kind) for item, _ in select_items(post)] == [(1, "image"), (2, "video")]
+    assert [(item.index, item.media_type) for item, _ in select_items(post)] == [(1, "image"), (2, "video")]
 
 
 def test_audio_only_post_downloads_its_audio() -> None:
-    post = Post(platform="youtube", items=[Item(index=1, kind="audio", formats=[]), Item(index=1, kind="thumbnail")])
+    post = Post(platform="youtube", items=[Item(index=1, media_type="audio", formats=[]), Item(index=1, media_type="thumbnail")])
 
-    assert [item.kind for item, _ in select_items(post)] == ["audio"]
+    assert [item.media_type for item, _ in select_items(post)] == ["audio"]
 
 
-def test_want_picks_kinds_and_the_uploaders_avatar() -> None:
+def test_want_picks_media_types_and_the_uploaders_avatar() -> None:
     post = carousel_post()
     chosen = select_items(post, ["images", "avatar"])
 
-    assert [item.kind for item, _ in chosen] == ["image", "avatar"]
+    assert [item.media_type for item, _ in chosen] == ["image", "avatar"]
     assert chosen[0][1] is post and chosen[1][1] is post.uploader
 
 
 def test_profile_defaults_to_its_avatar() -> None:
-    profile = Profile(platform="instagram", avatar=Item(kind="avatar", url="https://cdn.example.com/a.jpg"))
+    profile = Profile(platform="instagram", avatar=Item(media_type="avatar", url="https://cdn.example.com/a.jpg"))
 
-    assert [item.kind for item, _ in select_items(profile)] == ["avatar"]
+    assert [item.media_type for item, _ in select_items(profile)] == ["avatar"]
 
 
 # Downloading
 
 def test_mixed_post_downloads_with_names(tmp_path, fake_files, fake_ytdlp_download) -> None:
     calls, _ = fake_ytdlp_download
-    template = str(tmp_path / "%(uploader.username)s" / "%(id)s_%(index)s_%(kind)s.%(ext)s")
+    template = str(tmp_path / "%(uploader.username)s" / "%(id)s_%(index)s_%(media_type)s.%(ext)s")
     outcomes = download(carousel_post(), want=["image", "video", "avatar"], output=template)
 
     assert [outcome.status for outcome in outcomes] == ["saved"] * 3
@@ -231,9 +235,61 @@ def test_mixed_post_downloads_with_names(tmp_path, fake_files, fake_ytdlp_downlo
 
 def test_format_selection_applies_to_videos_only(tmp_path, fake_ytdlp_download) -> None:
     calls, _ = fake_ytdlp_download
-    download(carousel_post(), want=["video", "audio"], output=str(tmp_path / "%(kind)s.%(ext)s"), format="bv*+ba/b")
+    download(carousel_post(), want=["video", "audio"], output=str(tmp_path / "%(media_type)s.%(ext)s"), format="bv*+ba/b")
 
     assert [call["format"] for call in calls] == ["bv*+ba/b", "ba/b"]
+
+
+def test_max_quality_sorts_videos_only(tmp_path, fake_ytdlp_download) -> None:
+    calls, _ = fake_ytdlp_download
+    download(carousel_post(), want=["video", "audio"], output=str(tmp_path / "%(media_type)s.%(ext)s"), max_quality=1080)
+
+    assert [call.get("format_sort") for call in calls] == [["res:1080"], None]
+
+
+def _video_format(width: int, height: int) -> dict:
+    return {
+        "format_id": f"{width}x{height}",
+        "url": f"https://cdn.example.com/{width}x{height}.mp4",
+        "ext": "mp4",
+        "protocol": "https",
+        "width": width,
+        "height": height,
+        "vcodec": "avc1",
+        "acodec": "mp4a",
+    }
+
+
+@pytest.mark.parametrize(
+    ("sizes", "limit", "picked"),
+    [
+        # Vertical: 1080p means 1080 wide, so the 1440x2560 version is skipped.
+        ([(720, 1280), (1080, 1920), (1440, 2560)], 1080, "1080x1920"),
+        ([(1280, 720), (1920, 1080), (2560, 1440)], 1080, "1920x1080"),
+        # Nothing at or under the limit: the smallest above it, rather than no video.
+        ([(1080, 1920), (1440, 2560)], 720, "1080x1920"),
+    ],
+)
+def test_max_quality_picks_by_the_shorter_side(sizes, limit, picked) -> None:
+    """Runs yt-dlp's real format selection with the option the downloader sets."""
+    info = {
+        "id": "x",
+        "title": "x",
+        "extractor": "content-dl",
+        "extractor_key": "ContentDl",
+        "webpage_url": "https://example.com/x",
+        "formats": [_video_format(width, height) for width, height in sizes],
+    }
+    options = {"quiet": True, "no_warnings": True, "simulate": True, "format_sort": [f"res:{limit}"]}
+    with yt_dlp.YoutubeDL(options) as ydl:
+        chosen = ydl.process_ie_result(info, download=False)
+
+    assert chosen["format_id"] == picked
+
+
+def test_max_quality_flag_rejects_words(capsys) -> None:
+    assert main(["https://www.instagram.com/p/x/", "--max-quality", "high"]) == 1
+    assert "--max-quality expects a resolution" in capsys.readouterr().err
 
 
 def test_existing_files_are_not_downloaded_again(tmp_path, fake_files) -> None:
@@ -252,7 +308,7 @@ def test_same_name_in_one_run_gets_a_counter(tmp_path, fake_files) -> None:
 
 
 def test_missing_ext_comes_from_the_content_type(tmp_path, fake_files) -> None:
-    post = Post(platform="example.com", id="x", items=[Item(index=1, kind="image", url="https://e.com/pic.png")])
+    post = Post(platform="example.com", id="x", items=[Item(index=1, media_type="image", url="https://e.com/pic.png")])
     post.items[0].ext = None
 
     outcomes = download(post, output=str(tmp_path / "%(id)s.%(ext)s"))
@@ -269,7 +325,7 @@ def test_one_failed_item_does_not_stop_the_others(tmp_path, monkeypatch) -> None
         yield http.Stream(url=url, content_type="image/jpeg", chunks=iter([JPEG]))
 
     monkeypatch.setattr(http, "stream", flaky)
-    outcomes = download(carousel_post(), want=["image", "thumbnail"], output=str(tmp_path / "%(kind)s.%(ext)s"))
+    outcomes = download(carousel_post(), want=["image", "thumbnail"], output=str(tmp_path / "%(media_type)s.%(ext)s"))
 
     assert [outcome.status for outcome in outcomes] == ["failed", "saved"]
     assert "403" in outcomes[0].error
@@ -277,9 +333,9 @@ def test_one_failed_item_does_not_stop_the_others(tmp_path, monkeypatch) -> None
 
 
 def test_item_without_any_url_fails_clearly(tmp_path) -> None:
-    post = Post(platform="instagram", items=[Item(index=1, kind="video", formats=[])])
+    post = Post(platform="instagram", items=[Item(index=1, media_type="video", formats=[])])
 
-    assert download(post, output=str(tmp_path / "%(kind)s.%(ext)s"))[0].error == "no file or stream URL to download"
+    assert download(post, output=str(tmp_path / "%(media_type)s.%(ext)s"))[0].error == "no file or stream URL to download"
 
 
 # Embedded metadata: images
@@ -344,16 +400,16 @@ def test_png_gets_exif_and_xmp_chunks(tmp_path) -> None:
     embed_image_tags(path, tags_for(carousel_post()))
     data = path.read_bytes()
 
-    kinds, position = [], 8
+    media_types, position = [], 8
     while position < len(data):
-        length, kind = struct.unpack(">I4s", data[position : position + 8])
+        length, media_type = struct.unpack(">I4s", data[position : position + 8])
         payload = data[position + 8 : position + 8 + length]
         crc = struct.unpack(">I", data[position + 8 + length : position + 12 + length])[0]
-        assert crc == zlib.crc32(kind + payload)
-        kinds.append(kind)
+        assert crc == zlib.crc32(media_type + payload)
+        media_types.append(media_type)
         position += 12 + length
 
-    assert kinds == [b"IHDR", b"eXIf", b"iTXt", b"IDAT", b"IEND"]
+    assert media_types == [b"IHDR", b"eXIf", b"iTXt", b"IDAT", b"IEND"]
 
 
 def test_webp_becomes_extended_with_exif_and_xmp(tmp_path) -> None:
@@ -376,7 +432,7 @@ def test_unsupported_image_is_a_warning_not_a_failure(tmp_path, monkeypatch) -> 
         yield http.Stream(url=url, content_type="image/gif", chunks=iter([b"GIF89a"]))
 
     monkeypatch.setattr(http, "stream", gif)
-    gif_item = Item(index=1, kind="image", url="https://e.com/a.gif", ext="gif")
+    gif_item = Item(index=1, media_type="image", url="https://e.com/a.gif", ext="gif")
     post = Post(platform="x", id="1", description="caption", items=[gif_item])
     outcome = download(post, output=str(tmp_path / "%(id)s.%(ext)s"), embed_metadata=True)[0]
 
@@ -432,7 +488,7 @@ def test_cli_saves_a_mixed_post_with_names_and_metadata(
     source["path"] = sample_video
     template = str(tmp_path / "%(platform)s" / "%(uploader.username)s" / "%(id)s_%(index)s.%(ext)s")
 
-    assert main([POST_URL, "-o", template, "--embed-metadata"]) == 0
+    assert main([POST_URL, "--filename-template", template, "--embed-metadata"]) == 0
 
     folder = tmp_path / "instagram" / "someone"
     names = sorted(path.name for path in folder.iterdir())
@@ -443,34 +499,59 @@ def test_cli_saves_a_mixed_post_with_names_and_metadata(
     assert printed.count("[download]") == 3 and "video 2:" in printed
 
 
-def test_cli_want_only_downloads_those_kinds(tmp_path, capsys, offline_instagram, fake_files) -> None:
-    assert main([POST_URL, "--want", "images", "-o", str(tmp_path / "%(index)s.%(ext)s")]) == 0
+def test_cli_want_only_downloads_those_media_types(tmp_path, capsys, offline_instagram, fake_files) -> None:
+    assert main([POST_URL, "--media-types", "images", "--filename-template", str(tmp_path / "%(index)s.%(ext)s")]) == 0
 
     assert sorted(path.name for path in tmp_path.iterdir()) == ["1.jpg", "3.jpg"]
 
 
 def test_cli_reports_failures_with_exit_code(tmp_path, capsys, offline_instagram) -> None:
     # conftest turns the network off, so every image download fails.
-    assert main([POST_URL, "--want", "images", "-o", str(tmp_path / "%(index)s.%(ext)s")]) == 1
+    assert main([POST_URL, "--media-types", "images", "--filename-template", str(tmp_path / "%(index)s.%(ext)s")]) == 1
 
     assert capsys.readouterr().err.count("error: image") == 2
 
 
-def test_cli_with_nothing_to_download(capsys, offline_instagram) -> None:
+def test_cli_with_nothing_to_download_says_what_is_missing_and_why(capsys, offline_instagram) -> None:
     # The native avatar lookup can't reach the network in tests, so there is no avatar.
-    assert main([POST_URL, "--want", "avatar"]) == 1
+    assert main([POST_URL, "--media-types", "avatar"]) == 1
 
-    assert "nothing to download" in capsys.readouterr().err
+    error = capsys.readouterr().err
+    assert "error: no avatar found in this post" in error
+    assert "add --cookies FILE" in error and "--list-only" in error
+
+
+def test_cli_warns_about_a_missing_type_when_others_saved(tmp_path, capsys, offline_instagram, fake_files) -> None:
+    template = str(tmp_path / "%(media_type)s%(index)s.%(ext)s")
+    assert main([POST_URL, "--media-types", "images,avatar", "--filename-template", template]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.out.count("[download]") == 2
+    assert "warning: no avatar found in this post" in captured.err
+
+
+def test_cli_names_missing_picks(tmp_path, capsys, offline_instagram, fake_files) -> None:
+    template = str(tmp_path / "%(media_type)s%(index)s.%(ext)s")
+    assert main([POST_URL, "--items", "image:1,image:9", "--filename-template", template]) == 0
+
+    assert "warning: no image 9 found in this post" in capsys.readouterr().err
+
+
+def test_missing_avatar_hint_is_only_given_without_cookies() -> None:
+    post = Post(platform="instagram", items=[])
+    message = missing_message(post, ["avatar"], None, has_cookies=True, nothing_saved=True)
+
+    assert message == "no avatar found in this post. Run with --list-only to see everything that was found"
 
 
 # Live check (milestone 5 "done when", with a real video)
 
 @pytest.mark.skipif(os.environ.get("CONTENT_DL_LIVE") != "1", reason="set CONTENT_DL_LIVE=1 to hit YouTube")
 def test_live_youtube_download(tmp_path) -> None:
-    template = str(tmp_path / "%(id)s_%(kind)s.%(ext)s")
+    template = str(tmp_path / "%(id)s_%(media_type)s.%(ext)s")
 
     url = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
-    assert main([url, "--want", "video,thumbnail", "-o", template, "--embed-metadata"]) == 0
+    assert main([url, "--media-types", "video,thumbnail", "--filename-template", template, "--embed-metadata"]) == 0
 
     names = sorted(path.name for path in tmp_path.iterdir())
     assert len(names) == 2 and names[0].startswith("jNQXAC9IVRw_thumbnail") and names[1].startswith("jNQXAC9IVRw_video")
@@ -486,14 +567,14 @@ def test_picks_choose_single_items_and_the_avatar() -> None:
     chosen = select_items(post, picks=parse_item_picks("thumbnail:2,image:1,avatar"))
 
     # Result order, not the order of the picks; the avatar carries the uploader's metadata.
-    assert [(item.kind, item.index) for item, _ in chosen] == [("image", 1), ("thumbnail", 2), ("avatar", None)]
+    assert [(item.media_type, item.index) for item, _ in chosen] == [("image", 1), ("thumbnail", 2), ("avatar", None)]
     assert chosen[2][1] is post.uploader
 
 
-def test_a_pick_without_an_index_means_every_item_of_that_kind() -> None:
+def test_a_pick_without_an_index_means_every_item_of_that_media_type() -> None:
     chosen = select_items(carousel_post(), picks=parse_item_picks("images,videos"))
 
-    assert [(item.kind, item.index) for item, _ in chosen] == [("image", 1), ("video", 2)]
+    assert [(item.media_type, item.index) for item, _ in chosen] == [("image", 1), ("video", 2)]
 
 
 def test_picks_that_match_nothing_choose_nothing() -> None:
@@ -516,13 +597,13 @@ def test_load_info_json_downloads_picked_items_and_reports_json(
     tmp_path, capsys, fake_files, fake_ytdlp_download
 ) -> None:
     calls, _ = fake_ytdlp_download
-    template = str(tmp_path / "out" / "%(kind)s %(index)s.%(ext)s")
-    args = ["--load-info-json", saved_result(tmp_path), "--items", "image:1,video:2,avatar", "-o", template]
+    template = str(tmp_path / "out" / "%(media_type)s %(index)s.%(ext)s")
+    args = ["--from-json", saved_result(tmp_path), "--items", "image:1,video:2,avatar", "--filename-template", template]
 
     assert main([*args, "--report-json"]) == 0
 
     reports = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert [(report["kind"], report["index"], report["status"]) for report in reports] == [
+    assert [(report["media_type"], report["index"], report["status"]) for report in reports] == [
         ("image", 1, "saved"),
         ("video", 2, "saved"),
         ("avatar", None, "saved"),
@@ -534,35 +615,35 @@ def test_load_info_json_downloads_picked_items_and_reports_json(
 
 
 def test_report_json_includes_failures(tmp_path, capsys) -> None:
-    template = str(tmp_path / "%(kind)s.%(ext)s")
+    template = str(tmp_path / "%(media_type)s.%(ext)s")
     post = carousel_post()
     post.items[0].url = None
     path = tmp_path / "result.json"
     path.write_text(result_to_json(post), encoding="utf-8")
 
-    assert main(["--load-info-json", str(path), "--items", "image:1", "-o", template, "--report-json"]) == 1
+    assert main(["--from-json", str(path), "--items", "image:1", "--filename-template", template, "--report-json"]) == 1
 
     report = json.loads(capsys.readouterr().out)
     assert report["status"] == "failed" and report["error"] and report["path"] is None
 
 
 def test_load_info_json_and_a_url_are_exclusive(tmp_path, capsys) -> None:
-    assert main(["--load-info-json", saved_result(tmp_path), "https://www.instagram.com/p/x/"]) == 2
+    assert main(["--from-json", saved_result(tmp_path), "https://www.instagram.com/p/x/"]) == 2
     assert main([]) == 2
-    assert "either a URL or --load-info-json" in capsys.readouterr().err
+    assert "either a URL or --from-json" in capsys.readouterr().err
 
 
 def test_unreadable_info_json_is_a_clear_error(tmp_path, capsys) -> None:
     broken = tmp_path / "broken.json"
     broken.write_text("{not json", encoding="utf-8")
 
-    assert main(["--load-info-json", str(broken)]) == 1
-    assert main(["--load-info-json", str(tmp_path / "missing.json")]) == 1
+    assert main(["--from-json", str(broken)]) == 1
+    assert main(["--from-json", str(tmp_path / "missing.json")]) == 1
     assert capsys.readouterr().err.count("content-dl: error:") == 2
 
 
 def test_load_info_json_round_trips_through_dump(tmp_path, capsys) -> None:
-    assert main(["--load-info-json", saved_result(tmp_path), "-J"]) == 0
+    assert main(["--from-json", saved_result(tmp_path), "--json-only"]) == 0
     assert json.loads(capsys.readouterr().out) == json.loads(result_to_json(carousel_post()))
 
 

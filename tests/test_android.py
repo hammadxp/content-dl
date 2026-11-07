@@ -58,7 +58,7 @@ def test_cli_flags_reach_the_yt_dlp_provider(monkeypatch, capsys) -> None:
 
     monkeypatch.setattr(YtDlpProvider, "fetch_info", fake_fetch)
 
-    code = main(["-J", "--want", "video", "--js-runtimes", f"quickjs:{QJS}", "--ffmpeg-location", FFMPEG, VIDEO_URL])
+    code = main(["--json-only", "--media-types", "video", "--js-runtimes", f"quickjs:{QJS}", "--ffmpeg-location", FFMPEG, VIDEO_URL])
 
     assert code == 0
     assert json.loads(capsys.readouterr().out)["platform"] == "youtube"

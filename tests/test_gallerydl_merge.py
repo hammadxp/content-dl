@@ -65,7 +65,7 @@ def test_gallery_dl_carousel_becomes_a_post(gallery_messages) -> None:
     assert post.url == POST_URL
     assert (post.uploader.id, post.uploader.username, post.uploader.name) == ("123456", "someone", "Some One")
     assert post.uploader.url == "https://www.instagram.com/someone/"
-    assert [(item.index, item.kind) for item in post.items] == [(1, "image"), (2, "video"), (3, "image")]
+    assert [(item.index, item.media_type) for item in post.items] == [(1, "image"), (2, "video"), (3, "image")]
     assert {item.provider for item in post.items} == {"gallery-dl"}
 
 
@@ -80,7 +80,7 @@ def test_gallery_dl_items_keep_size_and_drop_zero_sizes() -> None:
 
     image = item_from_file(url, {"num": 1, "width": 0, "height": 0, "extension": "jpg"}, "example.com", 1)
 
-    assert image.to_dict() == {"index": 1, "kind": "image", "url": url, "ext": "jpg", "provider": "gallery-dl"}
+    assert image.to_dict() == {"index": 1, "media_type": "image", "url": url, "ext": "jpg", "provider": "gallery-dl"}
 
 
 def test_gallery_dl_skips_ytdl_hand_offs() -> None:
@@ -103,7 +103,7 @@ def test_unmapped_platform_uses_the_generic_mapper() -> None:
     post = result_from_messages(messages, "example.com")
 
     assert (post.id, post.title, post.upload_date) == ("7", "A picture", "2026-01-02T03:04:05Z")
-    assert post.items[0].kind == "image"
+    assert post.items[0].media_type == "image"
 
 
 # yt-dlp carousel translation
@@ -113,7 +113,7 @@ def test_yt_dlp_reads_an_instagram_carousel(ytdlp_carousel) -> None:
 
     assert post.title is None
     assert (post.uploader.id, post.uploader.username, post.uploader.name) == ("123456", "someone", "Some One")
-    assert [(item.index, item.kind) for item in post.items] == [
+    assert [(item.index, item.media_type) for item in post.items] == [
         (1, "image"),
         (2, "video"),
         (2, "audio"),
@@ -136,17 +136,17 @@ def test_strip_query_ignores_cdn_parameters() -> None:
 
 
 def test_duplicates_by_url_merge_and_keep_the_winner() -> None:
-    high = [Item(index=1, kind="image", url="https://cdn/a.jpg?s=1080", provider="gallery-dl")]
-    low = [Item(index=1, kind="image", url="https://cdn/a.jpg?s=640", width=640, provider="cobalt")]
+    high = [Item(index=1, media_type="image", url="https://cdn/a.jpg?s=1080", provider="gallery-dl")]
+    low = [Item(index=1, media_type="image", url="https://cdn/a.jpg?s=640", width=640, provider="cobalt")]
 
     (merged,) = merge_items([high, low])
 
     assert (merged.url, merged.width, merged.provider) == ("https://cdn/a.jpg?s=1080", 640, "gallery-dl")
 
 
-def test_different_kinds_are_never_duplicates() -> None:
-    video = Item(index=2, kind="video", provider="yt-dlp", extra={"media_id": "B"})
-    thumbnail = Item(index=2, kind="thumbnail", url="https://cdn/b.jpg", provider="yt-dlp", extra={"media_id": "B"})
+def test_different_media_types_are_never_duplicates() -> None:
+    video = Item(index=2, media_type="video", provider="yt-dlp", extra={"media_id": "B"})
+    thumbnail = Item(index=2, media_type="thumbnail", url="https://cdn/b.jpg", provider="yt-dlp", extra={"media_id": "B"})
 
     assert len(merge_items([[video, thumbnail]])) == 2
 
@@ -185,7 +185,7 @@ def test_lead_metadata_provider_decides_post_or_profile() -> None:
 
 
 def test_providers_outside_a_column_are_a_last_resort() -> None:
-    image = Item(index=1, kind="image", url="https://cdn/a.jpg", provider="yt-dlp")
+    image = Item(index=1, media_type="image", url="https://cdn/a.jpg", provider="yt-dlp")
 
     # YouTube's images column is empty, so yt-dlp's image is only there as a last resort.
     post = merge({"yt-dlp": Post(platform="youtube", items=[image])}, routes_for("youtube"))
@@ -198,7 +198,7 @@ def test_providers_outside_a_column_are_a_last_resort() -> None:
 def test_carousel_returns_every_image_and_video_once(offline_providers) -> None:
     post = extract(POST_URL)
 
-    assert [(item.index, item.kind, item.provider) for item in post.items] == [
+    assert [(item.index, item.media_type, item.provider) for item in post.items] == [
         (1, "image", "yt-dlp"),
         (2, "video", "yt-dlp"),
         (2, "audio", "yt-dlp"),
@@ -229,7 +229,7 @@ def ytdlp_without_images(offline_providers, ytdlp_carousel):
 def test_missing_images_are_filled_by_gallery_dl(ytdlp_without_images) -> None:
     post = extract(POST_URL)
 
-    assert [(item.index, item.kind, item.provider) for item in post.items] == [
+    assert [(item.index, item.media_type, item.provider) for item in post.items] == [
         (1, "image", "gallery-dl"),
         (2, "video", "yt-dlp"),
         (2, "audio", "yt-dlp"),
@@ -240,7 +240,7 @@ def test_missing_images_are_filled_by_gallery_dl(ytdlp_without_images) -> None:
 
 
 def test_merged_video_keeps_formats_and_gains_the_direct_file(ytdlp_without_images) -> None:
-    video = next(item for item in extract(POST_URL).items if item.kind == "video")
+    video = next(item for item in extract(POST_URL).items if item.media_type == "video")
 
     assert [fmt["format_id"] for fmt in video.formats] == ["101", "dash-video"]
     assert video.url.startswith("https://scontent.cdninstagram.com/o1/v/t16/f2/m86/222.mp4")
@@ -250,7 +250,7 @@ def test_merged_video_keeps_formats_and_gains_the_direct_file(ytdlp_without_imag
 def test_images_only_need_one_provider(offline_providers) -> None:
     post = extract(POST_URL, want=["images"])
 
-    assert [item.kind for item in post.items] == ["image", "image"]
+    assert [item.media_type for item in post.items] == ["image", "image"]
     assert offline_providers == ["yt-dlp"]
 
 
@@ -264,7 +264,7 @@ def test_yt_dlp_failure_falls_back_to_gallery_dl(monkeypatch, gallery_messages) 
     post = extract(POST_URL)
 
     assert post.uploader.username == "someone"
-    assert [(item.index, item.kind) for item in post.items] == [(1, "image"), (2, "video"), (3, "image")]
+    assert [(item.index, item.media_type) for item in post.items] == [(1, "image"), (2, "video"), (3, "image")]
     assert {item.provider for item in post.items} == {"gallery-dl"}
 
 
@@ -290,11 +290,11 @@ def test_forcing_gallery_dl_skips_the_merger(offline_providers) -> None:
 
 
 def test_cli_dumps_the_merged_carousel(offline_providers, capsys) -> None:
-    assert main(["-J", POST_URL]) == 0
+    assert main(["--json-only", POST_URL]) == 0
 
     post = result_from_json(capsys.readouterr().out)
     assert isinstance(post, Post)
-    assert [item.kind for item in post.items].count("image") == 2
+    assert [item.media_type for item in post.items].count("image") == 2
 
 
 # Live check
@@ -307,5 +307,5 @@ def test_live_instagram_carousel() -> None:
     post = extract(os.environ["CONTENT_DL_INSTAGRAM_URL"])
 
     assert post.uploader and post.uploader.username and post.upload_date
-    media = [item for item in post.items if item.kind in ("image", "video")]
-    assert len({(item.index, item.kind) for item in media}) == len(media) > 1
+    media = [item for item in post.items if item.media_type in ("image", "video")]
+    assert len({(item.index, item.media_type) for item in media}) == len(media) > 1

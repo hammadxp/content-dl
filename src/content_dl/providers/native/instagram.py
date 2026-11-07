@@ -84,7 +84,7 @@ def avatar_from_user(user: Mapping[str, Any]) -> Item | None:
     info = user.get("hd_profile_pic_url_info")
     if isinstance(info, dict) and info.get("url"):
         return Item(
-            kind="avatar",
+            media_type="avatar",
             url=info["url"],
             ext=ext_from_url(info["url"]),
             width=_size(info.get("width")),
@@ -96,7 +96,7 @@ def avatar_from_user(user: Mapping[str, Any]) -> Item | None:
     if not isinstance(url, str) or not url:
         return None
 
-    return Item(kind="avatar", url=url, ext=ext_from_url(url), provider=PROVIDER)
+    return Item(media_type="avatar", url=url, ext=ext_from_url(url), provider=PROVIDER)
 
 
 def profile_from_response(text: str, platform: str = "instagram") -> Profile:

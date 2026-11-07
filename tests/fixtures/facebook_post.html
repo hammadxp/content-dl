@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<!-- A logged-in Facebook post page, cut down to the data content-dl reads and with made-up
+     values. Same shapes as a real page from Nov 7, 2026: the post (data/node_v2) holds its
+     attachments, a bare {"id"} photo reference plus the styled renderer's full media; the
+     content story holds the text; an ad and a comment carry other post ids. -->
+<html><head><title>Facebook</title></head><body>
+<script type="application/json" data-sjs>{"require":[["ScheduledServerJS","handle",null,[{"__bbox":{"require":[["RelayPrefetchedStreamCache","next",[],["adp_post",{"__bbox":{"result":{"data":{"node_v2":{"id":"UzpfSTE6MjI=","post_id":"222","creation_time":1793531254,"actors":[{"__typename":"User","name":"Some Page","id":"111"}],"attachments":[{"media":{"__typename":"Photo","__isNode":"Photo","id":"901"},"styles":{"__typename":"StoryAttachmentPhotoStyleRenderer","attachment":{"media":{"__typename":"Photo","__isMedia":"Photo","viewer_image":{"height":2048,"width":1166},"photo_image":{"uri":"https:\/\/scontent.example.com\/v\/901_n.jpg?stp=dst-jpg_tt6&ctp=p526x296","height":924,"width":526},"url":"https:\/\/www.facebook.com\/photo\/?fbid=901&set=a.555","id":"901"}}}}],"comet_sections":{"content":{"story":{"id":"UzpfSTE6MjI=","post_id":"222","actors":[{"__typename":"User","__isActor":"User","id":"111","url":"https:\/\/www.facebook.com\/profile.php?id=111","name":"Some Page"}],"message":{"text":"Haripur 🇵🇰 to Nuremberg 🇩🇪"}}}},"feedback":{"comments":{"edges":[{"node":{"feedback":{"plugins":[{"post_id":"222"}]}}}]}}}}}}}]]]}}]]]}</script>
+<script type="application/json" data-sjs>{"require":[["RelayPrefetchedStreamCache","next",[],["ad",{"__bbox":{"result":{"data":{"node":{"post_id":"999","creation_time":1793959059,"actors":[{"__typename":"User","name":"An Advertiser","id":"888"}],"attachments":[{"media":{"__typename":"Photo","id":"777","photo_image":{"uri":"https:\/\/scontent.example.com\/ad.jpg","height":100,"width":100}}}],"message":{"text":"Buy now"}}}}}}]]]}</script>
+<script type="application/json">not json at all</script>
+</body></html>

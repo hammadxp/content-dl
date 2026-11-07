@@ -1,4 +1,4 @@
-"""Maps a URL to a platform, and a platform to the providers to try for each item kind.
+"""Maps a URL to a platform, and a platform to the providers to try for each media type.
 
 The routing table lives in JSON so it can change without a code release (on Android it
 updates the same way yt-dlp does). The defaults ship as ``routes.json`` next to this module,
@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from content_dl.schema import ItemKind
+from content_dl.schema import MediaType
 
 # INFO: Routing key for sites without their own row. It never appears in results: an unknown
 # site's platform is its domain (``example.com``), so templates still make sensible folders.
@@ -57,8 +57,8 @@ KNOWN_PROVIDERS = frozenset({"yt-dlp", "gallery-dl", "cobalt", "native", "generi
 ROUTES_ENV = "CONTENT_DL_ROUTES"
 ALL_PLATFORMS = "*"
 
-# Item kind -> routing column, in the table's column order (used when every kind is wanted).
-KIND_COLUMNS: dict[str, str] = {
+# Media type -> routing column, in the table's column order (used when every media type is wanted).
+MEDIA_TYPE_COLUMNS: dict[str, str] = {
     "video": "video",
     "audio": "video",
     "image": "images",
@@ -259,26 +259,26 @@ def routes_for(platform: str, with_cookies: bool = False, config: RoutingConfig 
     return (config or default_config()).routes_for(platform, with_cookies)
 
 
-def columns_for(want: list[ItemKind] | None = None) -> list[str]:
+def columns_for(want: list[MediaType] | None = None) -> list[str]:
     """Return the routing columns to fill, metadata first, without duplicates.
 
     >>> columns_for(["audio", "video", "avatar"])
     ['metadata', 'video', 'avatar']
     """
-    kinds = want if want is not None else KIND_COLUMNS
-    return list(dict.fromkeys(["metadata", *(KIND_COLUMNS[kind] for kind in kinds)]))
+    media_types = want if want is not None else MEDIA_TYPE_COLUMNS
+    return list(dict.fromkeys(["metadata", *(MEDIA_TYPE_COLUMNS[media_type] for media_type in media_types)]))
 
 
 def providers_for(
     platform: str,
-    want: list[ItemKind] | None = None,
+    want: list[MediaType] | None = None,
     with_cookies: bool = False,
     config: RoutingConfig | None = None,
 ) -> list[str]:
     """Return the providers to try for a platform, in priority order, without duplicates.
 
     Metadata providers come first because they decide the Post's fields; the providers for
-    each wanted kind follow. ``want=None`` means every kind. A platform without its own row
+    each wanted media type follow. ``want=None`` means every media type. A platform without its own row
     (an unknown site's domain) uses the unknown-site row.
 
     >>> providers_for("x", ["video"])

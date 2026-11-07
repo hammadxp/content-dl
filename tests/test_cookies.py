@@ -13,6 +13,7 @@ from content_dl.router import providers_for, routes_for
 
 FIXTURES = Path(__file__).parent / "fixtures"
 POST_URL = "https://www.instagram.com/p/DAsTXK3JbrA/"
+AVATAR_URL = "https://cdn.example.com/avatar.jpg"
 
 
 def load_fixture(name: str):
@@ -35,6 +36,9 @@ def recorded(monkeypatch):
 
     def fake_messages(self, url):
         runs.append(("gallery-dl", self.cookies))
+        if url.endswith("/avatar/"):
+            return [(3, AVATAR_URL, {"username": "someone", "fullname": "Some One", "extension": "jpg"})]
+
         return messages
 
     def fake_info(self, url):
@@ -79,8 +83,9 @@ def test_platforms_without_overrides_ignore_cookies() -> None:
 def test_logged_in_carousel_leads_with_gallery_dl(recorded, cookie_file) -> None:
     post = extract(POST_URL, cookies=Cookies(file=cookie_file))
 
-    assert [run[0] for run in recorded] == ["gallery-dl", "yt-dlp"]
-    assert [(item.index, item.kind, item.provider) for item in post.items] == [
+    # gallery-dl runs twice: the post, then the uploader's avatar.
+    assert [run[0] for run in recorded] == ["gallery-dl", "gallery-dl", "yt-dlp"]
+    assert [(item.index, item.media_type, item.provider) for item in post.items] == [
         (1, "image", "gallery-dl"),
         (2, "video", "yt-dlp"),
         (2, "audio", "yt-dlp"),
@@ -88,6 +93,20 @@ def test_logged_in_carousel_leads_with_gallery_dl(recorded, cookie_file) -> None
         (3, "image", "gallery-dl"),
     ]
     assert post.items[0].width == 1440
+    assert (post.uploader.avatar.url, post.uploader.avatar.provider) == (AVATAR_URL, "gallery-dl")
+
+
+def test_logged_in_avatar_is_skipped_when_not_wanted(recorded, cookie_file) -> None:
+    post = extract(POST_URL, want=["image"], cookies=Cookies(file=cookie_file))
+
+    assert [run[0] for run in recorded] == ["gallery-dl"]
+    assert post.uploader.avatar is None
+
+
+def test_logged_in_profile_url_gets_its_avatar_from_gallery_dl(recorded, cookie_file) -> None:
+    profile = extract("https://www.instagram.com/someone/", want=["avatar"], cookies=Cookies(file=cookie_file))
+
+    assert (profile.username, profile.name, profile.avatar.provider) == ("someone", "Some One", "gallery-dl")
 
 
 def test_every_provider_gets_the_cookies(recorded, cookie_file) -> None:
@@ -122,10 +141,23 @@ def test_gallery_dl_cookies_last_one_run_only(cookie_file) -> None:
 # CLI
 
 def test_cli_passes_cookies(recorded, cookie_file, capsys) -> None:
-    assert main(["-J", "--cookies", cookie_file, POST_URL]) == 0
-    assert [run[0] for run in recorded] == ["gallery-dl", "yt-dlp"]
+    assert main(["--json-only", "--cookies", cookie_file, POST_URL]) == 0
+    assert [run[0] for run in recorded] == ["gallery-dl", "gallery-dl", "yt-dlp"]
 
 
 def test_cli_reports_a_missing_cookie_file(tmp_path, capsys) -> None:
-    assert main(["-J", "--cookies", str(tmp_path / "nope.txt"), POST_URL]) == 1
+    assert main(["--json-only", "--cookies", str(tmp_path / "nope.txt"), POST_URL]) == 1
     assert "cookies file not found" in capsys.readouterr().err
+
+
+def test_profile_url_skips_video_and_image_providers(recorded, cookie_file) -> None:
+    # Everything is wanted, but once gallery-dl says it's a profile only the avatar is left.
+    extract("https://www.instagram.com/someone/?srtk=x", cookies=Cookies(file=cookie_file))
+
+    assert [run[0] for run in recorded] == ["gallery-dl"]
+
+
+def test_profile_listing_is_headed_by_the_username(recorded, cookie_file, capsys) -> None:
+    assert main(["--list-only", "--cookies", cookie_file, "https://www.instagram.com/someone/"]) == 0
+
+    assert capsys.readouterr().out.startswith("[instagram] someone: 1 item(s)")

@@ -20,8 +20,8 @@ from content_dl.embed import EmbedError, embed, tags_for
 from content_dl.extract import normalise_want
 from content_dl.providers.base import Cookies, ProviderError
 from content_dl.providers.native import http
-from content_dl.providers.ytdlp import cookie_options, host_options
-from content_dl.schema import Item, ItemKind, Post, Profile, Result
+from content_dl.providers.ytdlp import SilentLogger, cookie_options, error_message, host_options
+from content_dl.schema import Item, MediaType, Post, Profile, Result
 from content_dl.template import DEFAULT_TEMPLATE, render
 
 Owner = Post | Profile
@@ -29,15 +29,6 @@ Status = Literal["saved", "exists", "failed"]
 
 # Audio items hold only audio-only formats, so the best of them is the right pick.
 AUDIO_FORMAT = "ba/b"
-
-
-class _SilentLogger:
-    """yt-dlp prints errors even when quiet; content-dl reports them once, per item, instead."""
-
-    def debug(self, message: str) -> None:
-        pass
-
-    info = warning = error = debug
 
 
 @dataclass
@@ -52,10 +43,26 @@ class Download:
     warning: str | None = None
 
 
+def parse_max_quality(value: str) -> int:
+    """The pixel count of a ``--max-quality`` value, measured on the video's shorter side.
+
+    >>> parse_max_quality("1080")
+    1080
+    >>> parse_max_quality("720p")
+    720
+    """
+    digits = value.strip().lower().removesuffix("p")
+    if not digits.isdigit() or int(digits) <= 0:
+        raise ValueError(f"--max-quality expects a resolution such as 1080 or 720p, not {value!r}")
+
+    return int(digits)
+
+
 @dataclass
 class _Run:
     output: str
     format: str | None
+    max_quality: int | None
     embed_metadata: bool
     cookies: Cookies | None
     used: set[Path] = field(default_factory=set)
@@ -70,11 +77,13 @@ def _avatar_with_owner(result: Result) -> tuple[Item, Owner] | None:
     return (uploader.avatar, uploader) if uploader and uploader.avatar else None
 
 
-ItemPick = tuple[ItemKind, int | None]
+ItemPick = tuple[MediaType, int | None]
 
 
 def parse_item_picks(spec: str) -> list[ItemPick]:
-    """Parse ``--items``: ``KIND[:INDEX]``, comma separated. A kind without an index means all of that kind.
+    """Parse ``--items``: ``MEDIA_TYPE[:INDEX]``, comma separated.
+
+    A media type without an index means every item of that media type.
 
     >>> parse_item_picks("image:1, video:2,avatar")
     [('image', 1), ('video', 2), ('avatar', None)]
@@ -87,24 +96,24 @@ def parse_item_picks(spec: str) -> list[ItemPick]:
         if not name:
             continue
 
-        kinds = normalise_want([name]) or []
+        media_types = normalise_want([name]) or []
         if not index.strip():
-            picks.append((kinds[0], None))
+            picks.append((media_types[0], None))
             continue
 
         try:
-            picks.append((kinds[0], int(index)))
+            picks.append((media_types[0], int(index)))
         except ValueError:
             raise ValueError(f"item index must be a number, got {part.strip()!r}") from None
 
     if not picks:
-        raise ValueError("--items needs at least one KIND[:INDEX]")
+        raise ValueError("--items needs at least one MEDIA_TYPE[:INDEX]")
 
     return picks
 
 
 def _picked(item: Item, picks: list[ItemPick]) -> bool:
-    return any(item.kind == kind and (index is None or item.index == index) for kind, index in picks)
+    return any(item.media_type == media_type and (index is None or item.index == index) for media_type, index in picks)
 
 
 def select_items(
@@ -113,11 +122,11 @@ def select_items(
     """Pick the items to save, each with the object whose metadata it carries.
 
     With ``picks`` (from ``--items``), exactly those items, in the result's order. With
-    ``want``, every item of those kinds (and the avatar, if asked). Without either, the
+    ``want``, every item of those media_types (and the avatar, if asked). Without either, the
     defaults: every video and image, audio only where its post has no video (the video's
     download already includes the audio), and the avatar of a profile with nothing else.
     """
-    kinds = normalise_want(want)
+    media_types = normalise_want(want)
     avatar = _avatar_with_owner(result)
 
     if picks is not None:
@@ -127,18 +136,18 @@ def select_items(
 
         return chosen
 
-    if kinds is not None:
-        chosen = [(item, result) for item in result.items if item.kind in kinds]
-        if "avatar" in kinds and avatar:
+    if media_types is not None:
+        chosen = [(item, result) for item in result.items if item.media_type in media_types]
+        if "avatar" in media_types and avatar:
             chosen.append(avatar)
 
         return chosen
 
-    video_indexes = {item.index for item in result.items if item.kind == "video"}
+    video_indexes = {item.index for item in result.items if item.media_type == "video"}
     chosen = [
         (item, result)
         for item in result.items
-        if item.kind in ("video", "image") or (item.kind == "audio" and item.index not in video_indexes)
+        if item.media_type in ("video", "image") or (item.media_type == "audio" and item.index not in video_indexes)
     ]
     if not chosen and isinstance(result, Profile) and avatar:
         chosen.append(avatar)
@@ -238,9 +247,9 @@ def _stream_formats(result: Result, item: Item) -> list[dict[str, Any]]:
     would multiply the JSON's size), so they're left out; yt-dlp picks from the rest.
     """
     formats = list(item.formats or [])
-    if item.kind == "video":
+    if item.media_type == "video":
         for other in result.items:
-            if other.kind == "audio" and other.index == item.index and other.provider == item.provider:
+            if other.media_type == "audio" and other.index == item.index and other.provider == item.provider:
                 formats += other.formats or []
 
     usable = [fmt for fmt in formats if fmt.get("url") and not str(fmt.get("protocol", "")).startswith("http_dash")]
@@ -282,18 +291,24 @@ def _save_stream(run: _Run, result: Result, item: Item, owner: Owner) -> Downloa
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
-        "logger": _SilentLogger(),
+        "logger": SilentLogger(),
         "outtmpl": {"default": _ytdlp_template(path, item.ext)},
     }
-    chosen_format = run.format if item.kind == "video" else AUDIO_FORMAT
+    chosen_format = run.format if item.media_type == "video" else AUDIO_FORMAT
     if chosen_format:
         options["format"] = chosen_format
+
+    if run.max_quality and item.media_type == "video":
+        # INFO: yt-dlp's "res" sort field is the shorter side, so 1080 means 1920x1080 landscape and
+        # 1080x1920 vertical alike. Sorting prefers the largest format at or under the limit and
+        # falls back to the smallest one above it, so a video is never skipped for lacking a match.
+        options["format_sort"] = [f"res:{run.max_quality}"]
 
     try:
         with yt_dlp.YoutubeDL(options) as ydl:
             done = ydl.process_ie_result(info, download=True)
     except yt_dlp.utils.DownloadError as error:
-        raise ProviderError(str(error).removeprefix("ERROR: ").strip()) from error
+        raise ProviderError(error_message(error)) from error
 
     downloads = (done or {}).get("requested_downloads") or []
     saved = Path(downloads[0]["filepath"]) if downloads and downloads[0].get("filepath") else None
@@ -314,7 +329,7 @@ def _save(run: _Run, result: Result, item: Item, owner: Owner) -> Download:
 
     if run.embed_metadata and saved.status == "saved" and saved.path:
         try:
-            embed(saved.path, tags_for(owner), item.kind)
+            embed(saved.path, tags_for(owner), item.media_type)
         except (EmbedError, OSError, ValueError) as error:
             saved.warning = f"metadata not embedded: {error}"
 
@@ -330,19 +345,23 @@ def download(
     cookies: Cookies | None = None,
     on_item: Callable[[Download], None] | None = None,
     picks: list[ItemPick] | None = None,
+    max_quality: int | None = None,
 ) -> list[Download]:
     """Save the items of an extracted result and report what happened to each.
 
-    ``want`` picks item kinds as ``extract()`` does, ``picks`` names single items (see
+    ``want`` picks media types as ``extract()`` does, ``picks`` names single items (see
     ``parse_item_picks``), and without either the defaults of ``select_items`` apply.
-    ``output`` is a yt-dlp style file name template (see ``content_dl.template``). ``format`` is a yt-dlp format selection for video items.
+    ``output`` is a yt-dlp style file name template (see ``content_dl.template``). ``format`` is a yt-dlp format selection for video items, and
+    ``max_quality`` caps their shorter side in pixels (1080 for 1080p, landscape or vertical).
     ``embed_metadata`` writes the post's (or, for an avatar, the profile's) metadata into each
     file. One failed item doesn't stop the others; ``on_item`` is called as each one finishes.
 
     For the best video quality, extract with audio included: a video item's download merges
     in the audio formats at the same index.
     """
-    run = _Run(output=output, format=format, embed_metadata=embed_metadata, cookies=cookies)
+    run = _Run(
+        output=output, format=format, max_quality=max_quality, embed_metadata=embed_metadata, cookies=cookies
+    )
     downloads: list[Download] = []
     for item, owner in select_items(result, want, picks):
         try:
@@ -357,18 +376,18 @@ def download(
     return downloads
 
 
-def kinds_to_extract(want: Iterable[str] | None) -> list[ItemKind] | None:
-    """The kinds to ask ``extract()`` for so the downloader can save ``want``.
+def media_types_to_extract(want: Iterable[str] | None) -> list[MediaType] | None:
+    """The media types to ask ``extract()`` for so the downloader can save ``want``.
 
     A video needs its audio formats to merge the best pair, even when only videos are saved.
 
-    >>> kinds_to_extract(["videos"])
+    >>> media_types_to_extract(["videos"])
     ['video', 'audio']
-    >>> kinds_to_extract(None) is None
+    >>> media_types_to_extract(None) is None
     True
     """
-    kinds = normalise_want(want)
-    if kinds is not None and "video" in kinds and "audio" not in kinds:
-        kinds.append("audio")
+    media_types = normalise_want(want)
+    if media_types is not None and "video" in media_types and "audio" not in media_types:
+        media_types.append("audio")
 
-    return kinds
+    return media_types

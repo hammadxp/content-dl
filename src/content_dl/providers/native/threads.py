@@ -132,7 +132,7 @@ def avatar_from_user(user: JsonDict) -> Item | None:
         best = max(versions, key=lambda version: (_size(version.get("width")) or 0))
         url = best["url"]
         return Item(
-            kind="avatar",
+            media_type="avatar",
             url=url,
             ext=ext_from_url(url),
             width=_size(best.get("width")),
@@ -141,7 +141,7 @@ def avatar_from_user(user: JsonDict) -> Item | None:
         )
 
     url = _text(user.get("profile_pic_url"))
-    return Item(kind="avatar", url=url, ext=ext_from_url(url), provider=PROVIDER) if url else None
+    return Item(media_type="avatar", url=url, ext=ext_from_url(url), provider=PROVIDER) if url else None
 
 
 def profile_from_user(user: JsonDict, platform: str) -> Profile:
@@ -181,7 +181,7 @@ def items_from_media(media: JsonDict, index: int) -> list[Item]:
         items.append(
             Item(
                 index=index,
-                kind="video",
+                media_type="video",
                 url=url,
                 ext=ext_from_url(url) or "mp4",
                 width=_size(media.get("original_width")),
@@ -196,7 +196,7 @@ def items_from_media(media: JsonDict, index: int) -> list[Item]:
         items.append(
             Item(
                 index=index,
-                kind="thumbnail" if videos else "image",
+                media_type="thumbnail" if videos else "image",
                 url=image["url"],
                 ext=ext_from_url(image["url"]),
                 width=_size(image.get("width")),

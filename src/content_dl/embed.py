@@ -69,12 +69,12 @@ def tags_for(owner: Post | Profile) -> Tags:
     )
 
 
-def embed(path: Path, tags: Tags, kind: str) -> None:
+def embed(path: Path, tags: Tags, media_type: str) -> None:
     """Embed ``tags`` into the file at ``path``. Raises EmbedError for an unsupported file."""
     if not tags:
         return
 
-    if kind in ("video", "audio"):
+    if media_type in ("video", "audio"):
         embed_media_tags(path, tags)
     else:
         embed_image_tags(path, tags)

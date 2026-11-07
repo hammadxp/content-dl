@@ -19,8 +19,8 @@ import re
 from datetime import date, datetime, timezone
 from typing import Any, Literal, Union, get_args
 
-ItemKind = Literal["video", "audio", "image", "thumbnail", "avatar"]
-ITEM_KINDS: frozenset[str] = frozenset(get_args(ItemKind))
+MediaType = Literal["video", "audio", "image", "thumbnail", "avatar"]
+MEDIA_TYPES: frozenset[str] = frozenset(get_args(MediaType))
 
 DAY_ONLY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
@@ -114,7 +114,7 @@ class Item:
     """
 
     index: int | None = None
-    kind: ItemKind
+    media_type: MediaType
     url: str | None = None
     ext: str | None = None
     width: int | None = None
@@ -126,11 +126,11 @@ class Item:
     provider: str | None = None
     extra: JsonDict | None = None
 
-    FIELDS = ("index", "kind", "url", "ext", "width", "height", "duration", "formats", "provider", "extra")
+    FIELDS = ("index", "media_type", "url", "ext", "width", "height", "duration", "formats", "provider", "extra")
 
     def __post_init__(self) -> None:
-        if self.kind not in ITEM_KINDS:
-            raise SchemaError(f"unknown item kind {self.kind!r}, expected one of {sorted(ITEM_KINDS)}")
+        if self.media_type not in MEDIA_TYPES:
+            raise SchemaError(f"unknown media type {self.media_type!r}, expected one of {sorted(MEDIA_TYPES)}")
 
     def to_dict(self) -> JsonDict:
         return {name: getattr(self, name) for name in self.FIELDS if getattr(self, name) is not None}
@@ -138,8 +138,8 @@ class Item:
     @classmethod
     def from_dict(cls, data: Any) -> Item:
         data = _check_keys(data, cls.FIELDS, "item")
-        if "kind" not in data:
-            raise SchemaError("item is missing 'kind'")
+        if "media_type" not in data:
+            raise SchemaError("item is missing 'media_type'")
 
         return cls(**data)
 

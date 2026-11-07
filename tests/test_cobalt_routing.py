@@ -145,13 +145,13 @@ def test_bad_override_file_reports_the_path(tmp_path) -> None:
 
 def test_tunnel_becomes_one_video() -> None:
     [item] = items_from_response(TUNNEL)
-    assert (item.index, item.kind, item.ext, item.provider) == (1, "video", "mp4", "cobalt")
+    assert (item.index, item.media_type, item.ext, item.provider) == (1, "video", "mp4", "cobalt")
     assert item.formats is None
 
 
 def test_redirect_with_an_audio_file_is_audio() -> None:
     [item] = items_from_response({"status": "redirect", "url": "https://cdn/x", "filename": "song.opus"})
-    assert (item.kind, item.ext) == ("audio", "opus")
+    assert (item.media_type, item.ext) == ("audio", "opus")
 
 
 def test_slideshow_picker_has_images_and_post_audio() -> None:
@@ -167,7 +167,7 @@ def test_slideshow_picker_has_images_and_post_audio() -> None:
             ],
         }
     )
-    assert [(i.index, i.kind, i.ext) for i in items] == [(1, "image", "jpeg"), (2, "image", "jpeg"), (None, "audio", "mp3")]
+    assert [(i.index, i.media_type, i.ext) for i in items] == [(1, "image", "jpeg"), (2, "image", "jpeg"), (None, "audio", "mp3")]
 
 
 @pytest.mark.parametrize(
@@ -223,7 +223,7 @@ def test_yt_dlp_serves_video_by_default_and_cobalt_stays_idle(cobalt_server, ytd
 
     assert ytdlp_calls == [TIKTOK_URL]
     assert requests == []
-    assert {item.provider for item in result.items if item.kind == "video"} == {"yt-dlp"}
+    assert {item.provider for item in result.items if item.media_type == "video"} == {"yt-dlp"}
 
 
 def test_disabling_yt_dlp_in_the_config_makes_cobalt_serve_the_video(cobalt_server, ytdlp_calls) -> None:
@@ -232,7 +232,7 @@ def test_disabling_yt_dlp_in_the_config_makes_cobalt_serve_the_video(cobalt_serv
 
     assert ytdlp_calls == []
     assert len(requests) == 1
-    [video] = [item for item in result.items if item.kind == "video"]
+    [video] = [item for item in result.items if item.media_type == "video"]
     assert (video.provider, video.url, video.ext) == ("cobalt", TUNNEL["url"], "mp4")
     assert result.platform == "tiktok"
 
@@ -241,11 +241,11 @@ def test_cli_with_a_routes_file_and_cobalt_url(tmp_path, capsysbinary, cobalt_se
     routes = tmp_path / "routes.json"
     routes.write_text(json.dumps({"routes": {"tiktok": {"video": ["cobalt"], "thumbnail": [], "metadata": []}}}), encoding="utf-8")
 
-    code = main(["-J", "--routes", str(routes), "--cobalt-url", "https://cobalt.example.com", TIKTOK_URL])
+    code = main(["--json-only", "--routes", str(routes), "--cobalt-url", "https://cobalt.example.com", TIKTOK_URL])
 
     assert code == 0
     result = result_from_json(capsysbinary.readouterr().out.decode("utf-8"))
-    assert [(item.kind, item.provider) for item in result.items] == [("video", "cobalt")]
+    assert [(item.media_type, item.provider) for item in result.items] == [("video", "cobalt")]
     assert ytdlp_calls == []
     assert cobalt_server[0][0]["headers"] == {}
 
@@ -258,16 +258,16 @@ def test_without_an_instance_cobalt_is_skipped(ytdlp_calls) -> None:
 def test_cli_rejects_a_bad_routes_file(tmp_path, capsys) -> None:
     routes = tmp_path / "routes.json"
     routes.write_text(json.dumps({"routes": {"tiktok": {"video": ["cobalt2"]}}}), encoding="utf-8")
-    assert main(["-J", "--routes", str(routes), TIKTOK_URL]) == 1
+    assert main(["--json-only", "--routes", str(routes), TIKTOK_URL]) == 1
     assert "unknown provider" in capsys.readouterr().err
 
 
 # Merger
 
-def test_cobalt_copy_is_dropped_when_another_provider_has_the_kind() -> None:
-    video = Item(index=1, kind="video", formats=[], provider="yt-dlp", extra={"media_id": "1"})
-    tunnel = Item(index=1, kind="video", url=TUNNEL["url"], ext="mp4", provider="cobalt")
-    image = Item(index=1, kind="image", url="https://cdn/1.jpg", provider="cobalt")
+def test_cobalt_copy_is_dropped_when_another_provider_has_the_media_type() -> None:
+    video = Item(index=1, media_type="video", formats=[], provider="yt-dlp", extra={"media_id": "1"})
+    tunnel = Item(index=1, media_type="video", url=TUNNEL["url"], ext="mp4", provider="cobalt")
+    image = Item(index=1, media_type="image", url="https://cdn/1.jpg", provider="cobalt")
     results = {
         "yt-dlp": Post(platform="instagram", id="abc", items=[video]),
         "cobalt": Post(platform="instagram", items=[tunnel, image]),
@@ -275,7 +275,7 @@ def test_cobalt_copy_is_dropped_when_another_provider_has_the_kind() -> None:
 
     post = merge(results, routes_for("instagram"))
 
-    assert [(item.kind, item.provider) for item in post.items] == [("video", "yt-dlp"), ("image", "cobalt")]
+    assert [(item.media_type, item.provider) for item in post.items] == [("video", "yt-dlp"), ("image", "cobalt")]
     assert post.id == "abc"
 
 
@@ -291,4 +291,4 @@ def test_live_cobalt_serves_video_with_yt_dlp_turned_off() -> None:
     platform = detect_platform(url)
     result = extract(url, want=["video"], routes={"disable": {platform: ["yt-dlp"]}})
 
-    assert any(item.kind == "video" and item.provider == "cobalt" and item.url for item in result.items)
+    assert any(item.media_type == "video" and item.provider == "cobalt" and item.url for item in result.items)

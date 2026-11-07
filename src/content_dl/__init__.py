@@ -4,9 +4,9 @@ from content_dl.download import Download, download, select_items
 from content_dl.extract import ExtractionError, extract
 from content_dl.providers.base import Cookies
 from content_dl.schema import (
-    ITEM_KINDS,
+    MEDIA_TYPES,
     Item,
-    ItemKind,
+    MediaType,
     Post,
     Profile,
     Result,
@@ -23,9 +23,9 @@ __all__ = [
     "Cookies",
     "Download",
     "ExtractionError",
-    "ITEM_KINDS",
+    "MEDIA_TYPES",
     "Item",
-    "ItemKind",
+    "MediaType",
     "Post",
     "Profile",
     "Result",

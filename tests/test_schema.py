@@ -53,8 +53,8 @@ def test_post_example_parses_into_typed_objects() -> None:
     assert isinstance(post.uploader, Profile)
     assert post.uploader.username == "someone"
     assert isinstance(post.uploader.avatar, Item)
-    assert post.uploader.avatar.kind == "avatar"
-    assert [item.kind for item in post.items] == ["image", "video", "thumbnail"]
+    assert post.uploader.avatar.media_type == "avatar"
+    assert [item.media_type for item in post.items] == ["image", "video", "thumbnail"]
     assert [item.index for item in post.items] == [1, 2, 2]
     assert post.items[1].formats == []
     assert post.items[1].url is None
@@ -100,22 +100,22 @@ def test_profile_writes_missing_fields_as_null() -> None:
 
 
 def test_item_leaves_out_unset_fields() -> None:
-    assert Item(kind="thumbnail", url="https://example.com/t.jpg").to_dict() == {
-        "kind": "thumbnail",
+    assert Item(media_type="thumbnail", url="https://example.com/t.jpg").to_dict() == {
+        "media_type": "thumbnail",
         "url": "https://example.com/t.jpg",
     }
 
 
 def test_uploader_keeps_items_when_it_has_some() -> None:
-    uploader = Profile(platform="x", items=[Item(kind="image", url="https://example.com/a.jpg")])
+    uploader = Profile(platform="x", items=[Item(media_type="image", url="https://example.com/a.jpg")])
 
     data = Post(platform="x", uploader=uploader).to_dict()
 
-    assert data["uploader"]["items"] == [{"kind": "image", "url": "https://example.com/a.jpg"}]
+    assert data["uploader"]["items"] == [{"media_type": "image", "url": "https://example.com/a.jpg"}]
 
 
 def test_extra_round_trips() -> None:
-    item = Item(kind="video", provider="yt-dlp", extra={"extractor_key": "Youtube", "nested": {"a": [1, 2]}})
+    item = Item(media_type="video", provider="yt-dlp", extra={"extractor_key": "Youtube", "nested": {"a": [1, 2]}})
 
     assert Item.from_dict(item.to_dict()) == item
 
@@ -156,20 +156,20 @@ def test_to_utc_iso_rejects_non_dates(value) -> None:
 
 # Validation
 
-def test_unknown_item_kind_is_rejected() -> None:
-    with pytest.raises(SchemaError, match="unknown item kind"):
-        Item(kind="gif")
+def test_unknown_item_media_type_is_rejected() -> None:
+    with pytest.raises(SchemaError, match="unknown media type"):
+        Item(media_type="gif")
 
 
-def test_item_without_kind_is_rejected() -> None:
-    with pytest.raises(SchemaError, match="missing 'kind'"):
+def test_item_without_media_type_is_rejected() -> None:
+    with pytest.raises(SchemaError, match="missing 'media_type'"):
         Item.from_dict({"url": "https://example.com/a.jpg"})
 
 
 @pytest.mark.parametrize(
     ("cls", "data"),
     [
-        (Item, {"kind": "image", "size": 10}),
+        (Item, {"media_type": "image", "size": 10}),
         (Post, {"type": "post", "platform": "x", "likes": 3}),
         (Profile, {"type": "profile", "platform": "x", "upload_date": "2026-10-30T18:22:00Z"}),
     ],

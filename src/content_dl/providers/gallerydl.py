@@ -17,7 +17,9 @@ from typing import Any
 
 from content_dl.providers.base import Cookies, ProviderError
 from content_dl.providers.common import ext_from_url as _ext_from_url
-from content_dl.schema import Item, ItemKind, Post, Profile, Result, SchemaError
+from content_dl.providers.native import facebook as facebook_url
+from content_dl.providers.native import instagram as instagram_url
+from content_dl.schema import Item, MediaType, Post, Profile, Result, SchemaError
 
 NAME = "gallery-dl"
 
@@ -103,7 +105,7 @@ def _avatar(url: Any) -> Item | None:
     if not isinstance(url, str) or not url:
         return None
 
-    return Item(kind="avatar", url=url, ext=_ext_from_url(url), provider=NAME)
+    return Item(media_type="avatar", url=url, ext=_ext_from_url(url), provider=NAME)
 
 
 # Post mappers: gallery-dl's post-level kwdict -> Post fields (uploader included).
@@ -220,10 +222,11 @@ MEDIA_IDS: dict[str, Callable[[Kwdict], str | None]] = {
     "instagram": lambda file: instagram_shortcode(file.get("media_id")),
     "x": lambda file: _id(file.get("media_id")),
     "reddit": lambda file: _id(file.get("media_id")),
+    "facebook": lambda file: _id(file.get("id")),
 }
 
 
-def _kind_for(ext: str | None) -> ItemKind:
+def _media_type_for(ext: str | None) -> MediaType:
     if ext in VIDEO_EXTS:
         return "video"
 
@@ -254,16 +257,18 @@ def item_from_file(url: str, file: Kwdict, platform: str, position: int) -> Item
         "media_id": media_id,
         "filename": file.get("filename"),
     }
-    kind = _kind_for(ext)
+    media_type = _media_type_for(ext)
 
     return Item(
         index=index,
-        kind=kind,
+        media_type=media_type,
         url=url,
         ext=ext,
         width=_size(file.get("width")),
         height=_size(file.get("height")),
-        duration=float(duration) if kind != "image" and isinstance(duration, (int, float)) and duration > 0 else None,
+        duration=(
+            float(duration) if media_type != "image" and isinstance(duration, (int, float)) and duration > 0 else None
+        ),
         provider=NAME,
         extra={key: value for key, value in extra.items() if value not in (None, "")} or None,
     )
@@ -297,6 +302,78 @@ def result_from_messages(messages: Sequence[Message], platform: str) -> Post:
         return Post(platform=platform, items=[item for item in items if item], **mapper(post_kwdict, platform))
     except SchemaError as error:
         raise ProviderError(f"gallery-dl returned data content-dl can't read: {error}") from error
+
+
+def instagram_profile_from_messages(messages: Sequence[Message], platform: str, username: str) -> Profile:
+    """Translate gallery-dl's Instagram ``/USER/avatar/`` run into a Profile holding the avatar.
+
+    >>> messages = [(3, "https://cdn.example.com/pic.jpg?x=1",
+    ...              {"username": "someone", "fullname": "Some One", "owner_id": "42", "extension": "jpg"})]
+    >>> profile = instagram_profile_from_messages(messages, "instagram", "someone")
+    >>> profile.name, profile.avatar.ext, profile.avatar.provider
+    ('Some One', 'jpg', 'gallery-dl')
+    """
+    files = [(message[1], message[2]) for message in messages if message[0] == MESSAGE_URL]
+    if not files:
+        raise ProviderError("gallery-dl found no profile picture for this account")
+
+    url, file = files[0]
+    name = _text(file.get("username")) or username
+    avatar = Item(
+        media_type="avatar",
+        url=url,
+        ext=_text(file.get("extension")) or _ext_from_url(url),
+        width=_size(file.get("width")),
+        height=_size(file.get("height")),
+        provider=NAME,
+    )
+    return Profile(
+        platform=platform,
+        id=_id(file.get("owner_id")),
+        username=name,
+        name=_text(file.get("fullname")),
+        url=f"https://www.instagram.com/{name}/",
+        avatar=avatar,
+    )
+
+
+def facebook_profile_from_messages(messages: Sequence[Message], platform: str, url: str) -> Profile:
+    """Translate gallery-dl's Facebook ``/ID/avatar`` run into a Profile holding the avatar.
+
+    gallery-dl's ``username`` is the profile's vanity name when it has one; ``user_id`` is numeric.
+
+    >>> messages = [(2, {"username": "", "user_id": "100", "title": "Profile pictures"}),
+    ...             (3, "https://cdn.example.com/pic.jpg?x=1", {"user_id": "100", "extension": "jpg"})]
+    >>> profile = facebook_profile_from_messages(messages, "facebook", "https://www.facebook.com/people/Some-One/100/")
+    >>> profile.id, profile.name, profile.url, profile.avatar.ext
+    ('100', 'Some One', 'https://www.facebook.com/people/Some-One/100/', 'jpg')
+    """
+    directories = [message[1] for message in messages if message[0] == MESSAGE_DIRECTORY]
+    files = [(message[1], message[2]) for message in messages if message[0] == MESSAGE_URL]
+    if not files:
+        raise ProviderError("gallery-dl found no profile picture for this Facebook profile")
+
+    avatar_url, file = files[0]
+    info = {**(directories[0] if directories else {}), **file}
+    vanity = _text(info.get("username"))
+    if vanity and not facebook_url.PROFILE_NAME.fullmatch(vanity):
+        vanity = None  # A photo page's "username" is the owner's display name, not a vanity name.
+
+    return Profile(
+        platform=platform,
+        id=_id(info.get("user_id")) or facebook_url.profile_id(url),
+        username=vanity,
+        name=facebook_url.profile_name_from_url(url) or (_text(info.get("username")) if not vanity else None),
+        url=url,
+        avatar=Item(
+            media_type="avatar",
+            url=avatar_url,
+            ext=_text(file.get("extension")) or _ext_from_url(avatar_url),
+            width=_size(file.get("width")),
+            height=_size(file.get("height")),
+            provider=NAME,
+        ),
+    )
 
 
 def config_entries(cookies: Cookies | None) -> list[tuple[tuple[str, ...], str, Any]]:
@@ -347,11 +424,88 @@ class GalleryDlProvider:
 
         if data_job.exception is not None:
             error = data_job.exception
-            raise ProviderError(f"gallery-dl: {type(error).__name__}: {error}".rstrip(": "))
+            # Only the first line: later ones are gallery-dl's own tips, such as how to resume a run.
+            message = str(error).strip().splitlines()[0] if str(error).strip() else ""
+            raise ProviderError(f"gallery-dl: {type(error).__name__}: {message}".rstrip(": "))
 
         return data_job.data
 
+    def instagram_profile(self, username: str, platform: str) -> Profile:
+        """The profile and avatar from gallery-dl's ``/USER/avatar/`` extractor.
+
+        INFO: Instagram turns content-dl's own ``web_profile_info`` lookup away even with a session
+        (it answers with the logged-out page), while gallery-dl's logged-in API calls work. So with
+        cookies, gallery-dl supplies Instagram avatars.
+        """
+        messages = self.fetch_messages(f"https://www.instagram.com/{username}/avatar/")
+        return instagram_profile_from_messages(messages, platform, username)
+
+    def facebook_post(self, platform: str, known: Mapping[str, Result] | None, wants_avatar: bool) -> Post:
+        """Full-size copies of a Facebook post's photos, from the photo pages native found.
+
+        INFO: gallery-dl has no Facebook post extractor (and its profile pattern would take
+        "story.php" for a profile name). The post page only holds reduced copies, so native reads
+        it and lists each photo's page, and gallery-dl's photo extractor fetches the full size.
+        """
+        native = (known or {}).get("native")
+        native_items = native.items if isinstance(native, Post) else []
+        photos = [item for item in native_items if (item.extra or {}).get("photo_page")]
+        if not photos:
+            raise ProviderError("gallery-dl can't read Facebook posts; it needs the photo pages native finds")
+
+        items: list[Item] = []
+        for photo in photos:
+            try:
+                messages = self.fetch_messages(photo.extra["photo_page"])
+            except ProviderError:
+                continue  # native's reduced copy still stands in for this photo.
+
+            files = [(message[1], message[2]) for message in messages if message[0] == MESSAGE_URL]
+            if files and (item := item_from_file(files[0][0], files[0][1], platform, photo.index or 1)):
+                item.index = photo.index
+                item.width = item.width or photo.extra.get("full_width")
+                item.height = item.height or photo.extra.get("full_height")
+                items.append(item)
+
+        uploader = None
+        native_uploader = native.uploader if isinstance(native, Post) else None
+        if wants_avatar and native_uploader and native_uploader.id:
+            try:
+                messages = self.fetch_messages(f"https://www.facebook.com/{native_uploader.id}/avatar")
+                uploader = facebook_profile_from_messages(messages, platform, native_uploader.url or "")
+            except ProviderError:
+                pass
+
+        return Post(platform=platform, items=items, uploader=uploader)
+
     def extract(
         self, url: str, platform: str, want: list[str] | None = None, known: Mapping[str, Result] | None = None
-    ) -> Post:
-        return result_from_messages(self.fetch_messages(url), platform)
+    ) -> Result:
+        wants_avatar = want is None or "avatar" in want
+        if platform == "facebook" and (profile := facebook_url.profile_id(url)):
+            # INFO: gallery-dl's profile extractor queues a whole photo feed; the avatar extractor
+            # returns just the profile picture, which is what a profile URL means in content-dl.
+            messages = self.fetch_messages(f"https://www.facebook.com/{profile}/avatar")
+            return facebook_profile_from_messages(messages, platform, url)
+
+        if platform == "facebook" and facebook_url.is_post_url(url):
+            return self.facebook_post(platform, known, wants_avatar)
+
+        if platform == "instagram" and self.cookies:
+            try:
+                page, username = instagram_url.parse_url(url)
+            except ProviderError:
+                page, username = None, None  # Not a post or profile URL; gallery-dl decides below.
+
+            if page == "profile" and username:
+                return self.instagram_profile(username, platform)
+
+        post = result_from_messages(self.fetch_messages(url), platform)
+        uploader = post.uploader
+        if platform == "instagram" and self.cookies and wants_avatar and uploader and uploader.username:
+            try:
+                uploader.avatar = self.instagram_profile(uploader.username, platform).avatar
+            except ProviderError:
+                pass  # The post itself was found; the avatar column's other providers can still try.
+
+        return post

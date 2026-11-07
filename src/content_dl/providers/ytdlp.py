@@ -8,12 +8,13 @@ against saved output without touching the network.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping
 from typing import Any
 
 from content_dl.providers.base import Cookies, ProviderError
 from content_dl.providers.common import ext_from_url as _ext_from_url
-from content_dl.schema import Item, ItemKind, Post, Profile, Result, SchemaError
+from content_dl.schema import Item, MediaType, Post, Profile, Result, SchemaError
 
 NAME = "yt-dlp"
 
@@ -120,7 +121,7 @@ def _media_id(info: dict[str, Any]) -> str | None:
     return str(info["id"]) if info.get("id") is not None else None
 
 
-def _thumbnail_from_info(info: dict[str, Any], index: int, kind: ItemKind = "thumbnail") -> Item | None:
+def _thumbnail_from_info(info: dict[str, Any], index: int, media_type: MediaType = "thumbnail") -> Item | None:
     url = info.get("thumbnail")
     thumbnails = [thumb for thumb in info.get("thumbnails") or [] if thumb.get("url")]
     if not url and thumbnails:
@@ -134,7 +135,7 @@ def _thumbnail_from_info(info: dict[str, Any], index: int, kind: ItemKind = "thu
     extra = {"id": chosen.get("id"), "media_id": _media_id(info)}
     return Item(
         index=index,
-        kind=kind,
+        media_type=media_type,
         url=url,
         ext=_ext_from_url(url),
         width=chosen.get("width"),
@@ -166,7 +167,7 @@ def items_from_info(info: dict[str, Any], index: int = 1, in_carousel: bool = Fa
         items.append(
             Item(
                 index=index,
-                kind="video",
+                media_type="video",
                 ext=info.get("ext"),
                 width=info.get("width"),
                 height=info.get("height"),
@@ -183,7 +184,7 @@ def items_from_info(info: dict[str, Any], index: int = 1, in_carousel: bool = Fa
         items.append(
             Item(
                 index=index,
-                kind="audio",
+                media_type="audio",
                 ext=best_audio.get("ext"),
                 duration=duration,
                 formats=[_trim_format(fmt) for fmt in audio_formats],
@@ -232,7 +233,7 @@ def avatar_from_info(info: dict[str, Any]) -> Item | None:
     for thumb in info.get("thumbnails") or []:
         if thumb.get("id") == "avatar_uncropped" and thumb.get("url"):
             return Item(
-                kind="avatar",
+                media_type="avatar",
                 url=thumb["url"],
                 ext=_ext_from_url(thumb["url"]),
                 width=thumb.get("width"),
@@ -372,6 +373,51 @@ def host_options() -> dict[str, Any]:
     return options
 
 
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def error_message(error: BaseException) -> str:
+    """yt-dlp's error text without its "ERROR:" prefix.
+
+    INFO: In a terminal yt-dlp colours the prefix, so the colour codes are removed first or the
+    prefix wouldn't match and would show up twice in content-dl's own error line.
+
+    >>> error_message(ValueError("\\x1b[0;31mERROR:\\x1b[0m Unsupported URL: https://e.com/"))
+    'Unsupported URL: https://e.com/'
+    """
+    return ANSI_ESCAPE.sub("", str(error)).removeprefix("ERROR:").strip()
+
+
+def final_url(url: str, cookies: Cookies | None = None) -> str:
+    """Follow a link's redirects with yt-dlp's HTTP client and return where it ends up.
+
+    INFO: Facebook redirects a share link for yt-dlp's client but not for a bare request, so share
+    links are resolved here, with the same headers and cookies yt-dlp's extractors use.
+    """
+    import yt_dlp
+    from yt_dlp.networking.exceptions import RequestError
+
+    options = {**host_options(), **cookie_options(cookies), "quiet": True, "no_warnings": True}
+    try:
+        with yt_dlp.YoutubeDL({**options, "logger": SilentLogger()}) as ydl:
+            response = ydl.urlopen(url)
+            try:
+                return str(response.url)
+            finally:
+                response.close()
+    except (RequestError, yt_dlp.utils.DownloadError) as error:
+        raise ProviderError(f"request to {url} failed: {error_message(error)}") from error
+
+
+class SilentLogger:
+    """yt-dlp prints errors and warnings even when quiet; content-dl reports failures itself, once."""
+
+    def debug(self, message: str) -> None:
+        pass
+
+    info = warning = error = debug
+
+
 class YtDlpProvider:
     name = NAME
     platforms = None
@@ -383,6 +429,7 @@ class YtDlpProvider:
             "quiet": True,
             "no_warnings": True,
             "noprogress": True,
+            "logger": SilentLogger(),
             # A watch URL with &list= means the video, not the playlist.
             "noplaylist": True,
             # INFO: A channel URL is a playlist to yt-dlp. Listing entries flat, and only the first,
@@ -404,7 +451,7 @@ class YtDlpProvider:
                 info = ydl.extract_info(url, download=False)
                 return ydl.sanitize_info(info)
         except yt_dlp.utils.DownloadError as error:
-            message = str(error).removeprefix("ERROR: ").strip()
+            message = error_message(error)
             raise ProviderError(f"yt-dlp: {message}") from error
 
     def fetch_avatar(self, uploader_url: str) -> Item | None:

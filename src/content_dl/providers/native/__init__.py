@@ -2,6 +2,7 @@
 
 - Threads posts and profiles, from the JSON embedded in the page.
 - Instagram profile pictures, from ``web_profile_info``.
+- Facebook posts (author, text, date, photos), from the JSON a logged-in post page embeds.
 
 The routing table also lists ``native`` for Snapchat metadata, and the unknown-site row lists
 ``generic`` (og: tags); neither is built yet, so ``platforms`` leaves Snapchat out and
@@ -13,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from content_dl.providers.base import Cookies, ProviderError
-from content_dl.providers.native import http, instagram, threads
+from content_dl.providers.native import facebook, http, instagram, threads
 from content_dl.schema import Result
 
 NAME = "native"
@@ -21,7 +22,7 @@ NAME = "native"
 
 class NativeProvider:
     name = NAME
-    platforms = frozenset({"threads", "instagram"})
+    platforms = frozenset({"threads", "instagram", "facebook"})
 
     def __init__(self, cookies: Cookies | None = None) -> None:
         self.cookies = cookies
@@ -88,6 +89,12 @@ class NativeProvider:
 
         if platform == "instagram":
             return self.extract_instagram(url, platform, known)
+
+        if platform == "facebook":
+            if not facebook.is_post_url(url):
+                raise ProviderError("native: on Facebook only posts are read natively")
+
+            return facebook.post_from_page(self.fetch_page(url, "facebook.com"), url, platform)
 
         raise ProviderError(f"native: no extractor for {platform}")
 

@@ -22,7 +22,7 @@ from typing import Any
 MISSING = "NA"
 
 # INFO: The title falls back to the caption, which can be a paragraph, so it is cut at 80 characters.
-DEFAULT_TEMPLATE = "%(title,description,username,id).80s [%(id)s] %(kind)s%(index& {})s.%(ext)s"
+DEFAULT_TEMPLATE = "%(title,description,username,id).80s [%(id)s] %(media_type)s%(index& {})s.%(ext)s"
 
 FIELD = re.compile(r"%(?:%|\((?P<spec>[^)]*)\)(?P<format>[-#0 +]*\d*(?:\.\d+)?[diouxXeEfFgGcrs]))")
 UNSAFE = re.compile(r'[\x00-\x1f\x7f<>:"/\\|?*]')
@@ -84,12 +84,12 @@ def _render_field(spec: str, fmt: str, context: Mapping[str, Any]) -> str:
 def render(template: str, context: Mapping[str, Any]) -> Path:
     """Render a template into a relative or absolute file path.
 
-    >>> context = {"id": "C9x", "title": None, "description": "sunset", "kind": "image", "index": 1, "ext": "jpg"}
+    >>> context = {"id": "C9x", "title": None, "description": "sunset", "media_type": "image", "index": 1, "ext": "jpg"}
     >>> render(DEFAULT_TEMPLATE, context).as_posix()
     'sunset [C9x] image 1.jpg'
     >>> render("%(uploader.username|unknown)s/%(id)s_%(index)03d.%(ext)s", context).as_posix()
     'unknown/C9x_001.jpg'
-    >>> render(DEFAULT_TEMPLATE, {**context, "kind": "avatar", "index": None}).as_posix()
+    >>> render(DEFAULT_TEMPLATE, {**context, "media_type": "avatar", "index": None}).as_posix()
     'sunset [C9x] avatar.jpg'
     """
 

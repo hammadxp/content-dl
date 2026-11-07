@@ -89,7 +89,7 @@ def test_threads_carousel_becomes_a_post() -> None:
     assert (post.platform, post.id, post.title, post.description) == ("threads", "DThr3adsAbc", None, "sunset at the beach")
     assert post.upload_date == "2026-10-30T18:22:00Z"
     assert post.url == "https://www.threads.com/@someone/post/DThr3adsAbc"
-    assert [(item.index, item.kind) for item in post.items] == [(1, "image"), (2, "image"), (3, "video"), (3, "thumbnail")]
+    assert [(item.index, item.media_type) for item in post.items] == [(1, "image"), (2, "image"), (3, "video"), (3, "thumbnail")]
     assert {item.provider for item in post.items} == {"native"}
 
 
@@ -107,7 +107,7 @@ def test_threads_video_has_a_direct_file_and_its_cover() -> None:
 
     assert video.to_dict() == {
         "index": 3,
-        "kind": "video",
+        "media_type": "video",
         "url": "https://scontent.cdninstagram.com/o1/v/t16/f2/m84/AQPvid.mp4?_nc_cat=106&efg=abc&_nc_ht=x",
         "ext": "mp4",
         "width": 720,
@@ -115,7 +115,7 @@ def test_threads_video_has_a_direct_file_and_its_cover() -> None:
         "provider": "native",
         "extra": {"media_id": "3333333333333333303", "media_type": 2, "code": "DThrC3"},
     }
-    assert (cover.kind, cover.width, cover.height) == ("thumbnail", 640, 800)
+    assert (cover.media_type, cover.width, cover.height) == ("thumbnail", 640, 800)
 
 
 def test_threads_post_uploader_is_filled() -> None:
@@ -173,7 +173,7 @@ def test_instagram_response_becomes_a_profile() -> None:
         "name": "Some One",
         "url": "https://www.instagram.com/someone/",
         "avatar": {
-            "kind": "avatar",
+            "media_type": "avatar",
             "url": "https://scontent.cdninstagram.com/v/t51.2885-19/av_n.jpg?stp=dst-jpg_s320x320&_nc_ht=x",
             "ext": "jpg",
             "provider": "native",
@@ -252,7 +252,7 @@ def test_threads_carousel_returns_a_complete_post(threads_pages) -> None:
     assert (post.id, post.description, post.upload_date) == ("DThr3adsAbc", "sunset at the beach", "2026-10-30T18:22:00Z")
     assert (post.uploader.username, post.uploader.name) == ("someone", "Some One")
     assert post.uploader.avatar is not None
-    assert [(item.index, item.kind) for item in post.items] == [(1, "image"), (2, "image"), (3, "video"), (3, "thumbnail")]
+    assert [(item.index, item.media_type) for item in post.items] == [(1, "image"), (2, "image"), (3, "video"), (3, "thumbnail")]
     # Every Threads column is native, so the page is fetched once.
     assert threads_pages == [THREADS_POST_URL]
 
@@ -267,7 +267,7 @@ def test_threads_profile_url_returns_a_profile(threads_pages) -> None:
 def test_threads_want_filters_items(threads_pages) -> None:
     post = extract(THREADS_POST_URL, want=["video"])
 
-    assert [item.kind for item in post.items] == ["video"]
+    assert [item.media_type for item in post.items] == ["video"]
     assert post.uploader.avatar is None
 
 
@@ -282,10 +282,10 @@ def test_threads_failure_is_an_extraction_error(monkeypatch) -> None:
 
 
 def test_cli_dumps_a_threads_post(threads_pages, capsys) -> None:
-    assert main(["-J", THREADS_POST_URL]) == 0
+    assert main(["--json-only", THREADS_POST_URL]) == 0
 
     post = result_from_json(capsys.readouterr().out)
-    assert [item.kind for item in post.items].count("image") == 2
+    assert [item.media_type for item in post.items].count("image") == 2
 
 
 # extract() on Instagram (milestone 4 "done when")
@@ -296,7 +296,7 @@ def test_instagram_profile_url_returns_a_complete_profile(instagram_profile_prov
     assert isinstance(profile, Profile)
     assert (profile.id, profile.username, profile.name) == ("123456", "someone", "Some One")
     assert profile.url == "https://www.instagram.com/someone/"
-    assert (profile.avatar.kind, profile.avatar.provider) == ("avatar", "native")
+    assert (profile.avatar.media_type, profile.avatar.provider) == ("avatar", "native")
     assert profile.items == []
     assert instagram_profile_providers == ["someone"]
 
@@ -352,7 +352,7 @@ def test_live_threads_carousel() -> None:
     post = extract(os.environ["CONTENT_DL_THREADS_URL"])
 
     assert post.uploader and post.uploader.username and post.uploader.avatar and post.upload_date
-    media = [item for item in post.items if item.kind in ("image", "video")]
+    media = [item for item in post.items if item.media_type in ("image", "video")]
     assert len({item.index for item in media}) == len(media) > 1
 
 

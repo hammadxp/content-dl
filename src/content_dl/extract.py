@@ -8,16 +8,17 @@ from typing import Any
 
 from content_dl.merge import merge
 from content_dl.providers import CobaltInstance, Cookies, ProviderError, get_provider, provider_covers
-from content_dl.router import KIND_COLUMNS, RoutingConfig, columns_for, detect_platform, load_config
-from content_dl.schema import ITEM_KINDS, ItemKind, Post, Profile, Result
+from content_dl.providers.native import facebook
+from content_dl.router import MEDIA_TYPE_COLUMNS, RoutingConfig, columns_for, detect_platform, load_config
+from content_dl.schema import MEDIA_TYPES, MediaType, Post, Profile, Result
 
 
 class ExtractionError(RuntimeError):
     """No provider could extract the URL."""
 
 
-def normalise_want(want: Iterable[str] | None) -> list[ItemKind] | None:
-    """Accept item kinds in singular or plural form, as ``--want images,avatar`` does.
+def normalise_want(want: Iterable[str] | None) -> list[MediaType] | None:
+    """Accept media types in singular or plural form, as ``--media-types images,avatar`` does.
 
     >>> normalise_want(["images", "avatar", "audio"])
     ['image', 'avatar', 'audio']
@@ -27,29 +28,29 @@ def normalise_want(want: Iterable[str] | None) -> list[ItemKind] | None:
     if want is None:
         return None
 
-    kinds: list[ItemKind] = []
+    media_types: list[MediaType] = []
     for raw in want:
         name = raw.strip().lower()
         if not name:
             continue
 
-        if name not in ITEM_KINDS and name.endswith("s") and name[:-1] in ITEM_KINDS:
+        if name not in MEDIA_TYPES and name.endswith("s") and name[:-1] in MEDIA_TYPES:
             name = name[:-1]
 
-        if name not in ITEM_KINDS:
-            raise ValueError(f"unknown item kind {raw!r}, expected some of: {', '.join(sorted(ITEM_KINDS))}")
+        if name not in MEDIA_TYPES:
+            raise ValueError(f"unknown media type {raw!r}, expected some of: {', '.join(sorted(MEDIA_TYPES))}")
 
-        if name not in kinds:
-            kinds.append(name)  # type: ignore[arg-type]
+        if name not in media_types:
+            media_types.append(name)  # type: ignore[arg-type]
 
-    return kinds
+    return media_types
 
 
-def _keep_kinds(result: Result, want: list[ItemKind] | None) -> Result:
+def _keep_media_types(result: Result, want: list[MediaType] | None) -> Result:
     if want is None:
         return result
 
-    result.items = [item for item in result.items if item.kind in want]
+    result.items = [item for item in result.items if item.media_type in want]
     if isinstance(result, Profile) and "avatar" not in want:
         result.avatar = None
 
@@ -66,7 +67,7 @@ class _Fetcher:
         self,
         url: str,
         platform: str,
-        kinds: list[ItemKind] | None,
+        media_types: list[MediaType] | None,
         cookies: Cookies | None,
         cobalt: CobaltInstance | None,
     ) -> None:
@@ -74,7 +75,7 @@ class _Fetcher:
         self.cookies = cookies
         self.cobalt = cobalt
         self.platform = platform
-        self.kinds = kinds
+        self.media_types = media_types
         self.results: dict[str, Result] = {}
         self.errors: dict[str, str] = {}
 
@@ -83,14 +84,16 @@ class _Fetcher:
             try:
                 # known is a copy, so a provider can't change what earlier providers returned.
                 provider = get_provider(name, self.cookies, self.cobalt)
-                self.results[name] = provider.extract(self.url, self.platform, self.kinds, known=dict(self.results))
+                self.results[name] = provider.extract(
+                    self.url, self.platform, self.media_types, known=dict(self.results)
+                )
             except ProviderError as error:
                 self.errors[name] = str(error)
 
         return self.results.get(name)
 
 
-def _fills_column(result: Result, column: str, kinds: list[ItemKind] | None) -> bool:
+def _fills_column(result: Result, column: str, media_types: list[MediaType] | None) -> bool:
     """Does a result have what a routing column asks for? Metadata only needs a result."""
     if column == "metadata":
         return True
@@ -98,11 +101,11 @@ def _fills_column(result: Result, column: str, kinds: list[ItemKind] | None) -> 
     if column == "avatar":
         return _avatar_of(result) is not None
 
-    wanted = {kind for kind, kind_column in KIND_COLUMNS.items() if kind_column == column}
-    if kinds is not None:
-        wanted &= set(kinds)
+    wanted = {media_type for media_type, media_type_column in MEDIA_TYPE_COLUMNS.items() if media_type_column == column}
+    if media_types is not None:
+        wanted &= set(media_types)
 
-    return any(item.kind in wanted for item in result.items)
+    return any(item.media_type in wanted for item in result.items)
 
 
 def _avatar_of(result: Result) -> object:
@@ -122,7 +125,7 @@ def extract(
 ) -> Result:
     """Extract everything at ``url`` and return it as a Post or Profile.
 
-    ``want`` limits the result to some item kinds (``["video", "image"]``); metadata is always
+    ``want`` limits the result to some media types (``["video", "image"]``); metadata is always
     filled. ``provider`` forces one provider and skips the routing table and the merger, for
     debugging. ``cookies`` are passed to every provider, and switch the platform to its
     cookie routes (on Instagram, gallery-dl's logged-in API leads images and metadata).
@@ -131,38 +134,47 @@ def extract(
     ``cobalt`` is the cobalt instance to call (a URL or ``CobaltInstance``), defaulting to
     ``CONTENT_DL_COBALT_URL``; without one, cobalt is skipped.
 
-    Each routing column (metadata, then one per wanted kind) tries its providers left to right
+    Each routing column (metadata, then one per wanted media_type) tries its providers left to right
     until one returns what the column asks for. A provider runs at most once, and everything
     the providers returned is merged, so a provider called for one column can still fill
     fields or items another column's provider left out.
     """
-    kinds = normalise_want(want)
+    media_types = normalise_want(want)
     config = load_config(routes)
     platform = detect_platform(url, config)
-    instance = CobaltInstance(cobalt) if isinstance(cobalt, str) else cobalt or CobaltInstance.from_env()
+    if platform == "facebook":
+        url = facebook.resolve_share_url(url, cookies)
+
+    instance =CobaltInstance(cobalt) if isinstance(cobalt, str) else cobalt or CobaltInstance.from_env()
 
     if provider:
         try:
-            return _keep_kinds(get_provider(provider, cookies, instance).extract(url, platform, kinds), kinds)
+            forced = get_provider(provider, cookies, instance).extract(url, platform, media_types)
+            return _keep_media_types(forced, media_types)
         except ProviderError as error:
             raise ExtractionError(str(error)) from error
 
     row = config.routes_for(platform, with_cookies=bool(cookies))
-    columns = columns_for(kinds)
+    columns = columns_for(media_types)
     if not any(provider_covers(name, platform, instance) for column in columns for name in row.get(column, [])):
         raise ExtractionError(f"no provider can handle {platform} with the current routing config")
 
-    fetcher = _Fetcher(url, platform, kinds, cookies, instance)
+    fetcher = _Fetcher(url, platform, media_types, cookies, instance)
     for column in columns:
+        # INFO: The metadata column runs first. Once it says the URL is a profile, only the avatar
+        # is left to find: asking video or image providers about a profile costs requests and errors.
+        if column not in ("metadata", "avatar") and any(isinstance(r, Profile) for r in fetcher.results.values()):
+            continue
+
         for name in row.get(column, []):
             if not provider_covers(name, platform, instance):
                 continue
 
             result = fetcher.get(name)
-            if result is not None and _fills_column(result, column, kinds):
+            if result is not None and _fills_column(result, column, media_types):
                 break
 
     if not fetcher.results:
         raise ExtractionError("; ".join(fetcher.errors.values()))
 
-    return _keep_kinds(merge(fetcher.results, row, kinds), kinds)
+    return _keep_media_types(merge(fetcher.results, row, media_types), media_types)

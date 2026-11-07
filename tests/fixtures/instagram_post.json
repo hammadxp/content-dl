@@ -13,11 +13,11 @@
     "username": "someone",
     "name": "Some One",
     "url": "https://www.instagram.com/someone/",
-    "avatar": { "kind": "avatar", "url": "https://...", "ext": "jpg", "width": 1080, "height": 1080, "provider": "native" }
+    "avatar": { "media_type": "avatar", "url": "https://...", "ext": "jpg", "width": 1080, "height": 1080, "provider": "native" }
   },
   "items": [
-    { "index": 1, "kind": "image", "url": "https://...", "ext": "jpg", "width": 1440, "height": 1800, "provider": "gallery-dl" },
-    { "index": 2, "kind": "video", "ext": "mp4", "duration": 14.2, "formats": [], "provider": "yt-dlp" },
-    { "index": 2, "kind": "thumbnail", "url": "https://...", "ext": "jpg", "provider": "yt-dlp" }
+    { "index": 1, "media_type": "image", "url": "https://...", "ext": "jpg", "width": 1440, "height": 1800, "provider": "gallery-dl" },
+    { "index": 2, "media_type": "video", "ext": "mp4", "duration": 14.2, "formats": [], "provider": "yt-dlp" },
+    { "index": 2, "media_type": "thumbnail", "url": "https://...", "ext": "jpg", "provider": "yt-dlp" }
   ]
 }

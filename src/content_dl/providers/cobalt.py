@@ -22,7 +22,7 @@ from urllib.parse import urlparse
 from content_dl.providers.base import Cookies, ProviderError
 from content_dl.providers.common import ext_from_url
 from content_dl.providers.native import http
-from content_dl.schema import Item, ItemKind, Post, Result
+from content_dl.schema import Item, MediaType, Post, Result
 
 NAME = "cobalt"
 
@@ -31,7 +31,7 @@ API_KEY_ENV = "CONTENT_DL_COBALT_API_KEY"
 
 AUDIO_EXTS = frozenset({"mp3", "ogg", "opus", "wav", "m4a", "aac", "flac"})
 IMAGE_EXTS = frozenset({"jpg", "jpeg", "png", "webp", "gif", "heic"})
-PICKER_KINDS: dict[str, ItemKind] = {"photo": "image", "video": "video", "gif": "video"}
+PICKER_MEDIA_TYPES: dict[str, MediaType] = {"photo": "image", "video": "video", "gif": "video"}
 
 
 @dataclass(frozen=True)
@@ -100,7 +100,7 @@ def _ext(filename: str | None, url: str) -> str | None:
     return ext_from_url(url)
 
 
-def _kind_for_ext(ext: str | None) -> ItemKind:
+def _media_type_for_ext(ext: str | None) -> MediaType:
     if ext in AUDIO_EXTS:
         return "audio"
 
@@ -113,7 +113,7 @@ def items_from_response(data: Mapping[str, Any]) -> list[Item]:
     A picker entry's ``thumb`` becomes a thumbnail at the entry's index; a slideshow's
     background ``audio`` becomes an audio item without an index, since it belongs to the post.
 
-    >>> [(i.index, i.kind, i.ext) for i in items_from_response(
+    >>> [(i.index, i.media_type, i.ext) for i in items_from_response(
     ...     {"status": "picker", "picker": [{"type": "photo", "url": "https://c/1.jpg"},
     ...      {"type": "video", "url": "https://c/2.mp4", "thumb": "https://c/2.jpg"}]})]
     [(1, 'image', 'jpg'), (2, 'video', 'mp4'), (2, 'thumbnail', 'jpg')]
@@ -126,27 +126,32 @@ def items_from_response(data: Mapping[str, Any]) -> list[Item]:
 
         ext = _ext(data.get("filename"), url)
         extra = {"status": status, "filename": data.get("filename")}
-        return [Item(index=1, kind=_kind_for_ext(ext), url=url, ext=ext, provider=NAME, extra=_compact(extra))]
+        media_type = _media_type_for_ext(ext)
+        return [Item(index=1, media_type=media_type, url=url, ext=ext, provider=NAME, extra=_compact(extra))]
 
     if status == "picker":
         items: list[Item] = []
         for index, entry in enumerate(data.get("picker") or [], start=1):
             url = entry.get("url")
-            kind = PICKER_KINDS.get(entry.get("type", ""))
-            if not url or kind is None:
+            media_type = PICKER_MEDIA_TYPES.get(entry.get("type", ""))
+            if not url or media_type is None:
                 continue
 
             extra = {"status": status, "type": entry.get("type")}
-            items.append(Item(index=index, kind=kind, url=url, ext=ext_from_url(url), provider=NAME, extra=extra))
-            if entry.get("thumb") and kind == "video":
+            items.append(
+                Item(index=index, media_type=media_type, url=url, ext=ext_from_url(url), provider=NAME, extra=extra)
+            )
+            if entry.get("thumb") and media_type == "video":
                 thumb = entry["thumb"]
-                items.append(Item(index=index, kind="thumbnail", url=thumb, ext=ext_from_url(thumb), provider=NAME))
+                items.append(
+                    Item(index=index, media_type="thumbnail", url=thumb, ext=ext_from_url(thumb), provider=NAME)
+                )
 
         if data.get("audio"):
             audio = data["audio"]
             ext = _ext(data.get("audioFilename"), audio)
             extra = {"status": status, "filename": data.get("audioFilename")}
-            items.append(Item(kind="audio", url=audio, ext=ext, provider=NAME, extra=_compact(extra)))
+            items.append(Item(media_type="audio", url=audio, ext=ext, provider=NAME, extra=_compact(extra)))
 
         return items
 

@@ -1,4 +1,4 @@
-"""Milestone 2: router, yt-dlp provider, extract() and the -J / -F CLI.
+"""Milestone 2: router, yt-dlp provider, extract() and the --json-only / --list-only CLI.
 
 Everything here runs offline against a saved, trimmed yt-dlp info dict. Set CONTENT_DL_LIVE=1
 to also run the live YouTube check from the milestone's "done when".
@@ -102,7 +102,7 @@ def test_youtube_video_becomes_a_post(youtube_info) -> None:
     assert post.uploader.id == "UC4QobU6STFB0P71PMvOGN5A"
     assert post.uploader.username == "jawed"
     assert post.uploader.url == "https://www.youtube.com/@jawed"
-    assert [item.kind for item in post.items] == ["video", "audio", "thumbnail"]
+    assert [item.media_type for item in post.items] == ["video", "audio", "thumbnail"]
     assert {item.index for item in post.items} == {1}
     assert {item.provider for item in post.items} == {"yt-dlp"}
 
@@ -173,7 +173,7 @@ def test_channel_page_becomes_a_profile(channel_info) -> None:
     assert (profile.id, profile.username, profile.name) == ("UC4QobU6STFB0P71PMvOGN5A", "jawed", "jawed")
     assert profile.url == CHANNEL_URL
     assert profile.items == []
-    assert profile.avatar.kind == "avatar"
+    assert profile.avatar.media_type == "avatar"
     assert profile.avatar.url.endswith("=s0")
     assert profile.avatar.provider == "yt-dlp"
 
@@ -190,7 +190,7 @@ def test_extract_returns_a_post_with_the_uploader_avatar(offline_ytdlp) -> None:
     result = extract(VIDEO_URL)
 
     assert isinstance(result, Post)
-    assert result.uploader.avatar.kind == "avatar"
+    assert result.uploader.avatar.media_type == "avatar"
     assert offline_ytdlp == [VIDEO_URL, CHANNEL_URL]
 
 
@@ -220,15 +220,15 @@ def test_extract_returns_a_profile_for_a_channel_url(offline_ytdlp) -> None:
     assert offline_ytdlp == [CHANNEL_URL]
 
 
-def test_extract_keeps_only_wanted_kinds(offline_ytdlp) -> None:
+def test_extract_keeps_only_wanted_media_types(offline_ytdlp) -> None:
     result = extract(VIDEO_URL, want=["thumbnails"])
 
-    assert [item.kind for item in result.items] == ["thumbnail"]
+    assert [item.media_type for item in result.items] == ["thumbnail"]
     assert result.title == "Me at the zoo"
 
 
-def test_extract_rejects_unknown_kinds(offline_ytdlp) -> None:
-    with pytest.raises(ValueError, match="unknown item kind"):
+def test_extract_rejects_unknown_media_types(offline_ytdlp) -> None:
+    with pytest.raises(ValueError, match="unknown media type"):
         extract(VIDEO_URL, want=["gifs"])
 
 
@@ -255,15 +255,15 @@ def test_forcing_an_unknown_provider_fails(offline_ytdlp) -> None:
 # CLI
 
 def test_dump_json_prints_a_valid_post(offline_ytdlp, capsys) -> None:
-    assert main(["-J", VIDEO_URL]) == 0
+    assert main(["--json-only", VIDEO_URL]) == 0
 
     post = result_from_json(capsys.readouterr().out)
     assert isinstance(post, Post)
-    assert {"video", "audio", "thumbnail"} <= {item.kind for item in post.items}
+    assert {"video", "audio", "thumbnail"} <= {item.media_type for item in post.items}
 
 
 def test_list_formats_shows_items_and_formats(offline_ytdlp, capsys) -> None:
-    assert main(["-F", VIDEO_URL]) == 0
+    assert main(["--list-only", VIDEO_URL]) == 0
 
     out = capsys.readouterr().out
     assert "[youtube] jNQXAC9IVRw: 4 item(s)" in out
@@ -273,7 +273,7 @@ def test_list_formats_shows_items_and_formats(offline_ytdlp, capsys) -> None:
 
 
 def test_cli_reports_bad_urls(capsys) -> None:
-    assert main(["-J", "not a url"]) == 1
+    assert main(["--json-only", "not a url"]) == 1
     assert "error" in capsys.readouterr().err
 
 
@@ -281,16 +281,16 @@ def test_cli_reports_bad_urls(capsys) -> None:
 
 @pytest.mark.skipif(os.environ.get("CONTENT_DL_LIVE") != "1", reason="set CONTENT_DL_LIVE=1 to hit YouTube")
 def test_live_youtube_dump_json(capsys) -> None:
-    assert main(["-J", VIDEO_URL]) == 0
+    assert main(["--json-only", VIDEO_URL]) == 0
 
     post = result_from_json(capsys.readouterr().out)
     assert post.title and post.upload_date and post.uploader and post.uploader.avatar
-    assert {"video", "audio", "thumbnail"} <= {item.kind for item in post.items}
+    assert {"video", "audio", "thumbnail"} <= {item.media_type for item in post.items}
 
 
 @pytest.mark.skipif(os.environ.get("CONTENT_DL_LIVE") != "1", reason="set CONTENT_DL_LIVE=1 to hit YouTube")
 def test_live_youtube_channel_is_a_profile(capsys) -> None:
-    assert main(["-J", CHANNEL_URL]) == 0
+    assert main(["--json-only", CHANNEL_URL]) == 0
 
     profile = result_from_json(capsys.readouterr().out)
     assert isinstance(profile, Profile)

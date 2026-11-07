@@ -1,7 +1,11 @@
-"""content-dl command line. Flags copy yt-dlp's where they mean the same thing.
+"""content-dl command line.
 
-Without ``-J`` or ``-F`` the URL's items are downloaded: the defaults (every video and image),
-or the kinds ``--want`` names, saved under ``-o`` with ``--embed-metadata`` if asked.
+INFO: Flag names are content-dl's own and spelled out, so they aren't mistaken for yt-dlp's flags.
+A flag whose value is yt-dlp syntax says so in its name (``--ytdlp-format``).
+
+Without ``--json-only`` or ``--list-only`` the URL's items are downloaded: the defaults (every
+video and image), or the media types ``--media-types`` names, saved under ``--filename-template`` with
+``--embed-metadata`` if asked.
 """
 
 from __future__ import annotations
@@ -13,7 +17,7 @@ import sys
 from collections.abc import Sequence
 
 from content_dl import __version__
-from content_dl.download import Download, download, kinds_to_extract, parse_item_picks
+from content_dl.download import Download, ItemPick, download, media_types_to_extract, parse_item_picks, parse_max_quality
 from content_dl.extract import ExtractionError, extract, normalise_want
 from content_dl.providers.base import Cookies
 from content_dl.providers.cobalt import API_KEY_ENV, URL_ENV, CobaltInstance
@@ -79,15 +83,16 @@ def _all_items(result: Result) -> list[Item]:
 
 
 def render_listing(result: Result) -> str:
-    """The ``-F`` view: every item, then each stream item's formats."""
+    """The ``--list-only`` view: every item, then each stream item's formats."""
     items = _all_items(result)
-    label = result.id or result.url or ""
+    # A profile is known by its username or name; its id is a number nobody recognises.
+    label = getattr(result, "username", None) or getattr(result, "name", None) or result.id or result.url or ""
     sections = [f"[{result.platform}] {label}: {len(items)} item(s)"]
 
     item_rows = [
         [
             "" if item.index is None else str(item.index),
-            item.kind,
+            item.media_type,
             item.ext or "",
             _resolution(item),
             format_duration(item.duration),
@@ -96,7 +101,8 @@ def render_listing(result: Result) -> str:
         ]
         for item in items
     ]
-    sections.append(render_table(["INDEX", "KIND", "EXT", "RESOLUTION", "DURATION", "FORMATS", "PROVIDER"], item_rows))
+    headers = ["INDEX", "MEDIA TYPE", "EXT", "RESOLUTION", "DURATION", "FORMATS", "PROVIDER"]
+    sections.append(render_table(headers, item_rows))
 
     for item in items:
         if not item.formats:
@@ -116,7 +122,7 @@ def render_listing(result: Result) -> str:
             ]
             for fmt in item.formats
         ]
-        heading = f"Formats for item {item.index} ({item.kind}):"
+        heading = f"Formats for item {item.index} ({item.media_type}):"
         table = render_table(["ID", "EXT", "RESOLUTION", "FPS", "VCODEC", "ACODEC", "TBR", "SIZE", "NOTE"], format_rows)
         sections.append(f"{heading}\n{table}")
 
@@ -132,14 +138,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     output = parser.add_mutually_exclusive_group()
-    output.add_argument("-J", "--dump-single-json", action="store_true", help="print the full result as JSON")
-    output.add_argument("-F", "--list-formats", action="store_true", help="list available items and video formats")
+    output.add_argument(
+        "--json-only", action="store_true", help="print the full result as JSON and download nothing"
+    )
+    output.add_argument(
+        "--list-only", action="store_true", help="list available items and video formats and download nothing"
+    )
 
-    parser.add_argument("--want", metavar="KINDS", help="only these item kinds, comma separated (images,avatar)")
     parser.add_argument(
-        "--load-info-json",
+        "--media-types", metavar="TYPES", help="only these media types, comma separated (images,avatar)"
+    )
+    parser.add_argument(
+        "--from-json",
         metavar="FILE",
-        help="read the result from a file -J wrote instead of extracting a URL (download soon: stream URLs expire)",
+        help="read the result from a file --json-only wrote instead of extracting a URL"
+        " (download soon: stream URLs expire)",
     )
     parser.add_argument("--provider", metavar="NAME", help="force one provider, for debugging")
 
@@ -162,23 +175,32 @@ def build_parser() -> argparse.ArgumentParser:
     files = parser.add_argument_group("download")
     files.add_argument(
         "--items",
-        metavar="KIND[:INDEX],...",
-        help="download only these items, such as image:1,video:2,avatar (a kind without an index means all of it)",
+        metavar="MEDIA_TYPE[:INDEX],...",
+        help="download only these items, such as image:1,video:2,avatar"
+        " (a media type without an index means all of it)",
     )
     files.add_argument(
         "--report-json",
         action="store_true",
-        help="report each finished item as one JSON line (kind, index, status, path, error, warning)",
+        help="report each finished item as one JSON line (media_type, index, status, path, error, warning)",
     )
     files.add_argument(
-        "-f", "--format", metavar="FORMAT", help='yt-dlp format selection for video items, such as "bv*+ba/b"'
+        "--max-quality",
+        metavar="RESOLUTION",
+        help="highest video quality, such as 1080 or 720p, measured on the shorter side so vertical videos"
+        " count too; takes the next best quality when a video has none at or under it",
     )
     files.add_argument(
-        "-o",
-        "--output",
+        "--ytdlp-format",
+        metavar="FORMAT",
+        help='yt-dlp format selection syntax for video items, passed to yt-dlp as-is, such as "bv*+ba/b"',
+    )
+    files.add_argument(
+        "--filename-template",
         metavar="TEMPLATE",
         default=DEFAULT_TEMPLATE,
-        help="output file name template; nested fields with dots, fallbacks with commas (default: %(default)s)",
+        help="file name template, a folder path can go in front; nested fields with dots, fallbacks with commas"
+        " (default: %(default)s)",
     )
     files.add_argument(
         "--embed-metadata",
@@ -219,7 +241,7 @@ def _write(text: str) -> None:
 
 def _report_json(outcome: Download) -> None:
     fields = {
-        "kind": outcome.item.kind,
+        "media_type": outcome.item.media_type,
         "index": outcome.item.index,
         "status": outcome.status,
         "path": str(outcome.path) if outcome.path else None,
@@ -230,7 +252,7 @@ def _report_json(outcome: Download) -> None:
 
 
 def _report(outcome: Download) -> None:
-    label = outcome.item.kind if outcome.item.index is None else f"{outcome.item.kind} {outcome.item.index}"
+    label = outcome.item.media_type if outcome.item.index is None else f"{outcome.item.media_type} {outcome.item.index}"
     if outcome.status == "failed":
         print(f"content-dl: error: {label}: {outcome.error}", file=sys.stderr)
         return
@@ -241,15 +263,72 @@ def _report(outcome: Download) -> None:
         print(f"content-dl: warning: {label}: {outcome.warning}", file=sys.stderr)
 
 
+def _requested_but_missing(result: Result, want: list[str] | None, picks: list[ItemPick] | None) -> list[str]:
+    """Labels of the media types or items asked for that the result doesn't have, such as "avatar"."""
+    items = _all_items(result)
+    if picks:
+        return [
+            media_type if index is None else f"{media_type} {index}"
+            for media_type, index in picks
+            if not any(item.media_type == media_type and (index is None or item.index == index) for item in items)
+        ]
+
+    if want:
+        found = {item.media_type for item in items}
+        return [media_type for media_type in want if media_type not in found]
+
+    return []
+
+
+def missing_message(
+    result: Result,
+    want: list[str] | None,
+    picks: list[ItemPick] | None,
+    has_cookies: bool,
+    nothing_saved: bool,
+) -> str | None:
+    """Say what was asked for but not found, why when the reason is known, and what to try next.
+
+    ``None`` when everything asked for was found.
+
+    >>> from content_dl.schema import Post
+    >>> post = Post(platform="instagram", items=[Item(index=1, media_type="image", url="https://e.com/1.jpg")])
+    >>> print(missing_message(post, ["avatar"], None, has_cookies=False, nothing_saved=True))
+    ... # doctest: +NORMALIZE_WHITESPACE
+    no avatar found in this post. Instagram only shares profile pictures with a logged-in session: add
+    --cookies FILE or --cookies-from-browser BROWSER. Run with --list-only to see everything that was found
+    >>> missing_message(post, ["image"], None, has_cookies=False, nothing_saved=False) is None
+    True
+    """
+    missing = _requested_but_missing(result, want, picks)
+    if not missing and nothing_saved and not (want or picks):
+        # The defaults pick videos and images (or a profile's avatar), so none of those was found.
+        missing = ["avatar"] if hasattr(result, "avatar") else ["video or image"]
+
+    if not missing:
+        return None
+
+    page = "profile" if hasattr(result, "avatar") else "post"
+    sentences = [f"no {' or '.join(missing)} found in this {page}"]
+    if "avatar" in missing and result.platform == "instagram" and not has_cookies:
+        sentences.append(
+            "Instagram only shares profile pictures with a logged-in session: add"
+            " --cookies FILE or --cookies-from-browser BROWSER"
+        )
+
+    sentences.append("Run with --list-only to see everything that was found")
+    return ". ".join(sentences)
+
+
 def _load_result(path: str) -> Result:
-    """A result saved with -J, so a host that already extracted and picked items doesn't extract twice."""
+    """A result saved with --json-only, so a host that already extracted and picked items doesn't extract twice."""
     with open(path, encoding="utf-8") as file:
         return result_from_json(file.read())
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    downloading = not (args.dump_single_json or args.list_formats)
+    downloading = not (args.json_only or args.list_only)
     # INFO: The yt-dlp provider and the downloader read these from the environment (see
     # host_options), so the flags only need to set it for this process.
     if args.js_runtimes:
@@ -258,15 +337,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.ffmpeg_location:
         os.environ[FFMPEG_LOCATION_ENV] = args.ffmpeg_location
 
-    if (args.url is None) == (args.load_info_json is None):
-        print("content-dl: error: pass either a URL or --load-info-json FILE", file=sys.stderr)
+    if (args.url is None) == (args.from_json is None):
+        print("content-dl: error: pass either a URL or --from-json FILE", file=sys.stderr)
         return 2
 
     try:
-        want = normalise_want(args.want.split(",")) if args.want else None
+        want = normalise_want(args.media_types.split(",")) if args.media_types else None
         picks = parse_item_picks(args.items) if args.items else None
+        max_quality = parse_max_quality(args.max_quality) if args.max_quality else None
         cookies = Cookies(file=args.cookies, browser=args.cookies_from_browser)
-        extract_want = kinds_to_extract(want) if downloading else want
+        extract_want = media_types_to_extract(want) if downloading else want
         cobalt = CobaltInstance.from_env()
         if args.cobalt_url or args.cobalt_api_key:
             url = args.cobalt_url or (cobalt.url if cobalt else None)
@@ -275,8 +355,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             cobalt = CobaltInstance(url, args.cobalt_api_key or (cobalt.api_key if cobalt else None))
 
-        if args.load_info_json:
-            result = _load_result(args.load_info_json)
+        if args.from_json:
+            result = _load_result(args.from_json)
         else:
             result = extract(
                 args.url,
@@ -290,28 +370,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"content-dl: error: {error}", file=sys.stderr)
         return 1
 
-    if args.dump_single_json:
+    if args.json_only:
         _write(result_to_json(result))
         return 0
 
-    if args.list_formats:
+    if args.list_only:
         _write(render_listing(result))
         return 0
 
     outcomes = download(
         result,
         want=want,
-        output=args.output,
-        format=args.format,
+        output=args.filename_template,
+        format=args.ytdlp_format,
+        max_quality=max_quality,
         embed_metadata=args.embed_metadata,
         cookies=cookies or None,
         on_item=_report_json if args.report_json else _report,
         picks=picks,
     )
 
+    missing = missing_message(result, want, picks, has_cookies=bool(cookies), nothing_saved=not outcomes)
     if not outcomes:
-        print("content-dl: error: nothing to download; try -F to see what was found, or --want", file=sys.stderr)
+        print(f"content-dl: error: {missing or 'nothing to download'}", file=sys.stderr)
         return 1
+
+    if missing:
+        print(f"content-dl: warning: {missing}", file=sys.stderr)
 
     return 1 if any(outcome.status == "failed" for outcome in outcomes) else 0
 
