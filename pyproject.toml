@@ -7,7 +7,7 @@ name = "content-dl"
 version = "0.1.0"
 description = "Extract every video, audio track, image, thumbnail and avatar from one URL, with consistent metadata."
 requires-python = ">=3.10"
-dependencies = ["yt-dlp>=2026.10.21", "gallery-dl>=1.32.19"]
+dependencies = ["yt-dlp[curl-cffi]>=2026.10.21", "gallery-dl>=1.32.19"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8,!=9.2.0"]

@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import urlparse
 
-from content_dl.providers.base import ProviderError
+from content_dl.providers.base import Cookies, ProviderError
 from content_dl.schema import Item, ItemKind, Post, Profile, SchemaError
 
 NAME = "gallery-dl"
@@ -308,28 +308,51 @@ def result_from_messages(messages: Sequence[Message], platform: str) -> Post:
         raise ProviderError(f"gallery-dl returned data content-dl can't read: {error}") from error
 
 
+def config_entries(cookies: Cookies | None) -> list[tuple[tuple[str, ...], str, Any]]:
+    """The gallery-dl config entries for one run: per-site options, plus the user's cookies.
+
+    A cookies.txt file is a path; a browser is gallery-dl's ``[browser, profile]`` list.
+
+    >>> config_entries(Cookies(browser="firefox:work"))[-1]
+    (('extractor',), 'cookies', ['firefox', 'work'])
+    """
+    entries = [
+        (("extractor", category), key, value)
+        for category, options in GALLERY_DL_OPTIONS.items()
+        for key, value in options.items()
+    ]
+    if cookies and cookies.file:
+        entries.append((("extractor",), "cookies", cookies.file))
+    elif cookies and cookies.browser:
+        entries.append((("extractor",), "cookies", list(cookies.browser_spec())))
+
+    return entries
+
+
 class GalleryDlProvider:
     name = NAME
+
+    def __init__(self, cookies: Cookies | None = None) -> None:
+        self.cookies = cookies
 
     def fetch_messages(self, url: str) -> list[Message]:
         # INFO: Imported here so `import content_dl` stays fast and works without gallery-dl.
         from gallery_dl import config, extractor, job
 
-        found = extractor.find(url)
-        if found is None:
-            raise ProviderError("gallery-dl has no extractor for this URL")
-
-        # INFO: gallery-dl's config is process-wide. content-dl only sets the options it needs and
-        # never loads the user's gallery-dl config file, so results don't depend on the machine.
-        for category, options in GALLERY_DL_OPTIONS.items():
-            for key, value in options.items():
-                config.set(("extractor", category), key, value)
-
         # gallery-dl logs warnings (lowered quality, retries) to stderr; failures surface as exceptions.
         logging.getLogger("gallery-dl").setLevel(logging.CRITICAL)
 
-        data_job = job.DataJob(found, file=None)
-        data_job.run()
+        # INFO: gallery-dl's config is process-wide, so the options (cookies included) are applied
+        # for this run only and removed afterwards; one call's cookies never leak into the next.
+        # content-dl never loads the user's own gallery-dl config file either.
+        with config.apply(config_entries(self.cookies)):
+            found = extractor.find(url)
+            if found is None:
+                raise ProviderError("gallery-dl has no extractor for this URL")
+
+            data_job = job.DataJob(found, file=None)
+            data_job.run()
+
         if data_job.exception is not None:
             error = data_job.exception
             raise ProviderError(f"gallery-dl: {type(error).__name__}: {error}".rstrip(": "))

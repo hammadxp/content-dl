@@ -43,12 +43,15 @@ ROUTES: dict[str, dict[str, list[str]]] = {
         "avatar": ["yt-dlp"],
         "metadata": ["yt-dlp"],
     },
+    # INFO: yt-dlp leads on Instagram because it has a logged-out route (the post page's embedded
+    # JSON, or a logged-out GraphQL query when curl_cffi is installed). gallery-dl only uses the
+    # app API, which redirects to the login page without a session, so it is the fallback.
     "instagram": {
         "video": ["yt-dlp", "cobalt", "gallery-dl"],
-        "images": ["gallery-dl", "cobalt"],
+        "images": ["yt-dlp", "gallery-dl", "cobalt"],
         "thumbnail": ["yt-dlp"],
         "avatar": ["native"],
-        "metadata": ["gallery-dl", "yt-dlp"],
+        "metadata": ["yt-dlp", "gallery-dl"],
     },
     "threads": {
         "video": ["native"],
@@ -94,6 +97,17 @@ ROUTES: dict[str, dict[str, list[str]]] = {
     },
 }
 
+# Columns that change when the user supplies cookies; the rest of the row stays as above.
+# INFO: With a session, gallery-dl's app API works and returns more than yt-dlp's logged-out
+# route (image sizes, full owner data), so on Instagram it goes back to leading images and
+# metadata. yt-dlp stays first for video, where its format list is what matters.
+ROUTES_WITH_COOKIES: dict[str, dict[str, list[str]]] = {
+    "instagram": {
+        "images": ["gallery-dl", "yt-dlp", "cobalt"],
+        "metadata": ["gallery-dl", "yt-dlp"],
+    },
+}
+
 # Item kind -> routing column, in the table's column order (used when every kind is wanted).
 KIND_COLUMNS: dict[str, str] = {
     "video": "video",
@@ -131,9 +145,19 @@ def detect_platform(url: str) -> str:
     return ".".join(labels[1:] if labels[0] == "www" and len(labels) > 2 else labels)
 
 
-def routes_for(platform: str) -> dict[str, list[str]]:
-    """Return a platform's row of the routing table. Unknown sites share one row."""
-    return ROUTES.get(platform, ROUTES[UNKNOWN_SITE])
+def routes_for(platform: str, with_cookies: bool = False) -> dict[str, list[str]]:
+    """Return a platform's row of the routing table. Unknown sites share one row.
+
+    ``with_cookies`` applies the platform's cookie overrides, for when the user gave cookies.
+
+    >>> routes_for("instagram")["images"], routes_for("instagram", with_cookies=True)["images"]
+    (['yt-dlp', 'gallery-dl', 'cobalt'], ['gallery-dl', 'yt-dlp', 'cobalt'])
+    """
+    routes = ROUTES.get(platform, ROUTES[UNKNOWN_SITE])
+    if not with_cookies:
+        return routes
+
+    return {**routes, **ROUTES_WITH_COOKIES.get(platform, {})}
 
 
 def columns_for(want: list[ItemKind] | None = None) -> list[str]:
@@ -146,7 +170,7 @@ def columns_for(want: list[ItemKind] | None = None) -> list[str]:
     return list(dict.fromkeys(["metadata", *(KIND_COLUMNS[kind] for kind in kinds)]))
 
 
-def providers_for(platform: str, want: list[ItemKind] | None = None) -> list[str]:
+def providers_for(platform: str, want: list[ItemKind] | None = None, with_cookies: bool = False) -> list[str]:
     """Return the providers to try for a platform, in priority order, without duplicates.
 
     Metadata providers come first because they decide the Post's fields; the providers for
@@ -156,12 +180,9 @@ def providers_for(platform: str, want: list[ItemKind] | None = None) -> list[str
     >>> providers_for("x", ["video"])
     ['yt-dlp', 'gallery-dl', 'cobalt']
     """
-    routes = ROUTES.get(platform, ROUTES[UNKNOWN_SITE])
-    kinds = want if want is not None else KIND_COLUMNS
-
-    columns = ["metadata", *(KIND_COLUMNS[kind] for kind in kinds)]
+    routes = routes_for(platform, with_cookies)
     ordered: list[str] = []
-    for column in columns:
+    for column in columns_for(want):
         for provider in routes.get(column, []):
             if provider not in ordered:
                 ordered.append(provider)

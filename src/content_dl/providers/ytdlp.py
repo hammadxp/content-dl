@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urlparse
 
-from content_dl.providers.base import ProviderError
+from content_dl.providers.base import Cookies, ProviderError
 from content_dl.schema import Item, ItemKind, Post, Profile, SchemaError
 
 NAME = "yt-dlp"
@@ -111,13 +111,14 @@ def _uploader_from_info(info: dict[str, Any], platform: str) -> Profile | None:
     # INFO: On YouTube, uploader_id is the "@handle" and channel_id the stable "UC..." id. Other
     # extractors put a numeric id in uploader_id, which isn't a username, so it stays the id.
     username = info.get("channel") if channel_is_username else None
-    if isinstance(uploader_id, str) and uploader_id.startswith("@"):
+    is_handle = isinstance(uploader_id, str) and uploader_id.startswith("@")
+    if is_handle:
         username = uploader_id[1:]
 
     if channel_is_username and username and not url and platform == "instagram":
         url = f"https://www.instagram.com/{username}/"
 
-    profile_id = channel_id or (uploader_id if username is None else None)
+    profile_id = channel_id or (None if is_handle else uploader_id)
 
     return Profile(
         platform=platform,
@@ -326,11 +327,30 @@ def result_from_info(info: dict[str, Any], platform: str) -> Post | Profile:
     return post_from_info(info, platform)
 
 
+def cookie_options(cookies: Cookies | None) -> dict[str, Any]:
+    """yt-dlp options for the user's cookies.
+
+    >>> cookie_options(Cookies(browser="chrome"))
+    {'cookiesfrombrowser': ('chrome', None, None, None)}
+    >>> cookie_options(None)
+    {}
+    """
+    options: dict[str, Any] = {}
+    if cookies and cookies.file:
+        options["cookiefile"] = cookies.file
+
+    if cookies and cookies.browser:
+        options["cookiesfrombrowser"] = (*cookies.browser_spec(), None, None)
+
+    return options
+
+
 class YtDlpProvider:
     name = NAME
 
-    def __init__(self, options: dict[str, Any] | None = None) -> None:
+    def __init__(self, options: dict[str, Any] | None = None, cookies: Cookies | None = None) -> None:
         self.options = {
+            **cookie_options(cookies),
             "quiet": True,
             "no_warnings": True,
             "noprogress": True,

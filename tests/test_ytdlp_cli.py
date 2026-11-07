@@ -80,7 +80,7 @@ def test_detect_platform_rejects_non_http_urls(url) -> None:
 
 
 def test_providers_follow_the_routing_table_order() -> None:
-    assert providers_for("instagram") == ["gallery-dl", "yt-dlp", "cobalt", "native"]
+    assert providers_for("instagram") == ["yt-dlp", "gallery-dl", "cobalt", "native"]
     assert providers_for("youtube", ["video"]) == ["yt-dlp"]
     assert providers_for("youtube", ["avatar"]) == ["yt-dlp"]
 

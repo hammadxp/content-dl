@@ -12,6 +12,7 @@ from collections.abc import Sequence
 
 from content_dl import __version__
 from content_dl.extract import ExtractionError, extract
+from content_dl.providers.base import Cookies
 from content_dl.router import RouterError
 from content_dl.schema import Item, Result, result_to_json
 
@@ -130,6 +131,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--want", metavar="KINDS", help="only these item kinds, comma separated (images,avatar)")
     parser.add_argument("--provider", metavar="NAME", help="force one provider, for debugging")
+
+    auth = parser.add_argument_group("cookies", "optional; used by every provider and preferred routes when given")
+    auth.add_argument("--cookies", metavar="FILE", help="Netscape cookies.txt file to read cookies from")
+    auth.add_argument(
+        "--cookies-from-browser",
+        metavar="BROWSER[:PROFILE]",
+        help="read cookies from a browser's cookie store (chrome, edge, firefox, safari, ...)",
+    )
     return parser
 
 
@@ -142,7 +151,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     want = args.want.split(",") if args.want else None
     try:
-        result = extract(args.url, want=want, provider=args.provider)
+        cookies = Cookies(file=args.cookies, browser=args.cookies_from_browser)
+        result = extract(args.url, want=want, provider=args.provider, cookies=cookies or None)
     except (ExtractionError, RouterError, ValueError) as error:
         print(f"content-dl: error: {error}", file=sys.stderr)
         return 1

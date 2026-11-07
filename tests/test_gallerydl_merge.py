@@ -112,7 +112,7 @@ def test_yt_dlp_reads_an_instagram_carousel(ytdlp_carousel) -> None:
     post = post_from_info(ytdlp_carousel, "instagram")
 
     assert post.title is None
-    assert (post.uploader.username, post.uploader.name) == ("someone", "Some One")
+    assert (post.uploader.id, post.uploader.username, post.uploader.name) == ("123456", "someone", "Some One")
     assert [(item.index, item.kind) for item in post.items] == [
         (1, "image"),
         (2, "video"),
@@ -164,20 +164,21 @@ def test_merge_does_not_change_provider_results(gallery_messages, ytdlp_carousel
 
 
 def test_fields_come_from_the_highest_priority_provider() -> None:
+    # Ran in this order, but Instagram's metadata column puts yt-dlp first.
     results = {
-        "yt-dlp": Post(platform="x", id="1", title="from yt-dlp", upload_date="2026-01-01"),
         "gallery-dl": Post(platform="x", id="1", title="from gallery-dl", description="caption"),
+        "yt-dlp": Post(platform="x", id="1", title="from yt-dlp", upload_date="2026-01-01"),
     }
 
     post = merge(results, routes_for("instagram"))
 
-    assert (post.title, post.description, post.upload_date) == ("from gallery-dl", "caption", "2026-01-01")
+    assert (post.title, post.description, post.upload_date) == ("from yt-dlp", "caption", "2026-01-01")
 
 
 def test_lead_metadata_provider_decides_post_or_profile() -> None:
     results = {
-        "gallery-dl": Profile(platform="x", username="someone"),
-        "yt-dlp": Post(platform="x", id="1"),
+        "gallery-dl": Post(platform="x", id="1"),
+        "yt-dlp": Profile(platform="x", username="someone"),
     }
 
     assert isinstance(merge(results, routes_for("instagram")), Profile)
@@ -186,7 +187,8 @@ def test_lead_metadata_provider_decides_post_or_profile() -> None:
 def test_providers_outside_a_column_are_a_last_resort() -> None:
     image = Item(index=1, kind="image", url="https://cdn/a.jpg", provider="yt-dlp")
 
-    post = merge({"yt-dlp": Post(platform="instagram", items=[image])}, routes_for("instagram"))
+    # YouTube's images column is empty, so yt-dlp's image is only there as a last resort.
+    post = merge({"yt-dlp": Post(platform="youtube", items=[image])}, routes_for("youtube"))
 
     assert post.items == [image]
 
@@ -197,13 +199,14 @@ def test_carousel_returns_every_image_and_video_once(offline_providers) -> None:
     post = extract(POST_URL)
 
     assert [(item.index, item.kind, item.provider) for item in post.items] == [
-        (1, "image", "gallery-dl"),
+        (1, "image", "yt-dlp"),
         (2, "video", "yt-dlp"),
         (2, "audio", "yt-dlp"),
         (2, "thumbnail", "yt-dlp"),
-        (3, "image", "gallery-dl"),
+        (3, "image", "yt-dlp"),
     ]
-    assert offline_providers == ["gallery-dl", "yt-dlp"]
+    # yt-dlp's logged-out route filled every column, so gallery-dl never ran.
+    assert offline_providers == ["yt-dlp"]
 
 
 def test_carousel_has_uploader_and_upload_date(offline_providers) -> None:
@@ -214,7 +217,29 @@ def test_carousel_has_uploader_and_upload_date(offline_providers) -> None:
     assert (post.id, post.title, post.description) == ("DAsTXK3JbrA", None, "sunset at the beach")
 
 
-def test_merged_video_keeps_formats_and_gains_the_direct_file(offline_providers) -> None:
+@pytest.fixture
+def ytdlp_without_images(offline_providers, ytdlp_carousel):
+    """yt-dlp returns the carousel but no picture for its still images."""
+    for position in (0, 2):
+        del ytdlp_carousel["entries"][position]["thumbnail"], ytdlp_carousel["entries"][position]["thumbnails"]
+
+    return offline_providers
+
+
+def test_missing_images_are_filled_by_gallery_dl(ytdlp_without_images) -> None:
+    post = extract(POST_URL)
+
+    assert [(item.index, item.kind, item.provider) for item in post.items] == [
+        (1, "image", "gallery-dl"),
+        (2, "video", "yt-dlp"),
+        (2, "audio", "yt-dlp"),
+        (2, "thumbnail", "yt-dlp"),
+        (3, "image", "gallery-dl"),
+    ]
+    assert ytdlp_without_images == ["yt-dlp", "gallery-dl"]
+
+
+def test_merged_video_keeps_formats_and_gains_the_direct_file(ytdlp_without_images) -> None:
     video = next(item for item in extract(POST_URL).items if item.kind == "video")
 
     assert [fmt["format_id"] for fmt in video.formats] == ["101", "dash-video"]
@@ -222,25 +247,25 @@ def test_merged_video_keeps_formats_and_gains_the_direct_file(offline_providers)
     assert (video.width, video.height, video.duration) == (720, 1280, 14.2)
 
 
-def test_images_only_skip_yt_dlp(offline_providers) -> None:
+def test_images_only_need_one_provider(offline_providers) -> None:
     post = extract(POST_URL, want=["images"])
 
     assert [item.kind for item in post.items] == ["image", "image"]
-    assert offline_providers == ["gallery-dl"]
+    assert offline_providers == ["yt-dlp"]
 
 
-def test_gallery_dl_failure_falls_back_to_yt_dlp(monkeypatch, ytdlp_carousel) -> None:
+def test_yt_dlp_failure_falls_back_to_gallery_dl(monkeypatch, gallery_messages) -> None:
     def failing(self, url):
-        raise ProviderError("gallery-dl: HttpError: 401 Unauthorized")
+        raise ProviderError("yt-dlp: Instagram sent an empty media response")
 
-    monkeypatch.setattr(GalleryDlProvider, "fetch_messages", failing)
-    monkeypatch.setattr(YtDlpProvider, "fetch_info", lambda self, url: ytdlp_carousel)
+    monkeypatch.setattr(YtDlpProvider, "fetch_info", failing)
+    monkeypatch.setattr(GalleryDlProvider, "fetch_messages", lambda self, url: gallery_messages)
 
     post = extract(POST_URL)
 
     assert post.uploader.username == "someone"
-    assert [(item.index, item.kind) for item in post.items if item.kind == "image"] == [(1, "image"), (3, "image")]
-    assert {item.provider for item in post.items} == {"yt-dlp"}
+    assert [(item.index, item.kind) for item in post.items] == [(1, "image"), (2, "video"), (3, "image")]
+    assert {item.provider for item in post.items} == {"gallery-dl"}
 
 
 def test_all_providers_failing_reports_every_error(monkeypatch) -> None:
@@ -253,7 +278,7 @@ def test_all_providers_failing_reports_every_error(monkeypatch) -> None:
     monkeypatch.setattr(GalleryDlProvider, "fetch_messages", gallery_fails)
     monkeypatch.setattr(YtDlpProvider, "fetch_info", ytdlp_fails)
 
-    with pytest.raises(ExtractionError, match="login required; yt-dlp: rate limited"):
+    with pytest.raises(ExtractionError, match="rate limited; gallery-dl: login required"):
         extract(POST_URL)
 
 

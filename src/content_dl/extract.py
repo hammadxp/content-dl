@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from content_dl.merge import merge
-from content_dl.providers import PROVIDERS, ProviderError, get_provider
+from content_dl.providers import PROVIDERS, Cookies, ProviderError, get_provider
 from content_dl.router import KIND_COLUMNS, columns_for, detect_platform, routes_for
 from content_dl.schema import ITEM_KINDS, ItemKind, Post, Profile, Result
 
@@ -60,8 +60,9 @@ def _keep_kinds(result: Result, want: list[ItemKind] | None) -> Result:
 class _Fetcher:
     """Runs each provider at most once per extraction and remembers what it returned."""
 
-    def __init__(self, url: str, platform: str, kinds: list[ItemKind] | None) -> None:
+    def __init__(self, url: str, platform: str, kinds: list[ItemKind] | None, cookies: Cookies | None) -> None:
         self.url = url
+        self.cookies = cookies
         self.platform = platform
         self.kinds = kinds
         self.results: dict[str, Result] = {}
@@ -70,7 +71,7 @@ class _Fetcher:
     def get(self, name: str) -> Result | None:
         if name not in self.results and name not in self.errors:
             try:
-                self.results[name] = get_provider(name).extract(self.url, self.platform, self.kinds)
+                self.results[name] = get_provider(name, self.cookies).extract(self.url, self.platform, self.kinds)
             except ProviderError as error:
                 self.errors[name] = str(error)
 
@@ -99,12 +100,18 @@ def _avatar_of(result: Result) -> object:
     return result.uploader.avatar if result.uploader else None
 
 
-def extract(url: str, want: Iterable[str] | None = None, provider: str | None = None) -> Result:
+def extract(
+    url: str,
+    want: Iterable[str] | None = None,
+    provider: str | None = None,
+    cookies: Cookies | None = None,
+) -> Result:
     """Extract everything at ``url`` and return it as a Post or Profile.
 
     ``want`` limits the result to some item kinds (``["video", "image"]``); metadata is always
     filled. ``provider`` forces one provider and skips the routing table and the merger, for
-    debugging.
+    debugging. ``cookies`` are passed to every provider, and switch the platform to its
+    cookie routes (on Instagram, gallery-dl's logged-in API leads images and metadata).
 
     Each routing column (metadata, then one per wanted kind) tries its providers left to right
     until one returns what the column asks for. A provider runs at most once, and everything
@@ -116,16 +123,16 @@ def extract(url: str, want: Iterable[str] | None = None, provider: str | None = 
 
     if provider:
         try:
-            return _keep_kinds(get_provider(provider).extract(url, platform, kinds), kinds)
+            return _keep_kinds(get_provider(provider, cookies).extract(url, platform, kinds), kinds)
         except ProviderError as error:
             raise ExtractionError(str(error)) from error
 
-    routes = routes_for(platform)
+    routes = routes_for(platform, with_cookies=bool(cookies))
     columns = columns_for(kinds)
     if not any(name in PROVIDERS for column in columns for name in routes.get(column, [])):
         raise ExtractionError(f"no provider can handle {platform} yet")
 
-    fetcher = _Fetcher(url, platform, kinds)
+    fetcher = _Fetcher(url, platform, kinds, cookies)
     for column in columns:
         for name in routes.get(column, []):
             if name not in PROVIDERS:

@@ -11,12 +11,12 @@ content-dl takes one URL and returns everything that can be extracted from it, i
 - Platforms: YouTube, Instagram, Threads, X, TikTok, Reddit, Snapchat, plus a generic fallback for unknown sites.
 - Item kinds: video, audio, image, thumbnail, avatar (profile picture).
 - Metadata on every result: id, title, uploader, upload date, platform. A field the platform doesn't provide is `null` (see the serialisation rules under Data model).
-- Public content only. No cookies or logins.
+- Public content by default. Cookies are optional: when the user supplies them (a cookies.txt file or a browser's cookie store), every provider gets them and the router prefers logged-in routes. content-dl never signs in or stores credentials itself.
 - Runs on desktop (CLI, Python API, optional HTTP server) and on Android, embedded in the Seal fork.
 
 **Out of scope for v1**
 
-- Logins, private accounts, stories that need a session.
+- Signing in for the user or storing credentials. Private accounts and stories work only as far as the user's own cookies already give access, and aren't tested.
 - Downloading a whole profile or feed (one post or one profile at a time).
 - Supporting every site on the internet. The generic fallback is a best effort.
 
@@ -65,7 +65,7 @@ Every result is either a **Post** or a **Profile**, and both hold a list of **It
 
 ## Example output
 
-An Instagram carousel post with one image and one video. The image came from gallery-dl, the video and its thumbnail from yt-dlp, and the merger combined them.
+An Instagram carousel post with one image and one video. Here yt-dlp returned the video and its thumbnail but not the image, so the next provider in the images column, gallery-dl, filled it in, and the merger combined them.
 
 ```json
 {
@@ -117,7 +117,7 @@ The router maps a URL to a platform, then looks up which providers to try for ea
 | Platform | video / audio | images | thumbnail | avatar | metadata |
 | --- | --- | --- | --- | --- | --- |
 | YouTube | yt-dlp | none | yt-dlp | yt-dlp | yt-dlp |
-| Instagram | yt-dlp > cobalt > gallery-dl | gallery-dl > cobalt | yt-dlp | native | gallery-dl > yt-dlp |
+| Instagram | yt-dlp > cobalt > gallery-dl | yt-dlp > gallery-dl > cobalt | yt-dlp | native | yt-dlp > gallery-dl |
 | Threads | native | native | native | native | native |
 | X | yt-dlp > cobalt | gallery-dl > cobalt | yt-dlp | gallery-dl | yt-dlp > gallery-dl |
 | TikTok | yt-dlp > cobalt | gallery-dl | yt-dlp | gallery-dl | yt-dlp |
@@ -125,10 +125,16 @@ The router maps a URL to a platform, then looks up which providers to try for ea
 | Snapchat | cobalt | cobalt | cobalt | none | native (page OG tags) |
 | Unknown site | yt-dlp > gallery-dl > generic | gallery-dl > generic | generic | none | yt-dlp > generic |
 
+**With cookies.** When the user supplies cookies, a platform can switch some cells to logged-in providers; every other cell stays as above.
+
+| Platform | images | metadata | Why |
+| --- | --- | --- | --- |
+| Instagram | gallery-dl > yt-dlp > cobalt | gallery-dl > yt-dlp | With a session, gallery-dl's app API works and returns more than yt-dlp's logged-out route (image sizes, full owner data) |
+
 **What each provider is good at**
 
-- **yt-dlp:** video and audio streams with every format, and uniform metadata (`id`, `title`, `uploader`, `timestamp`, `extractor_key`). On YouTube it also gives the channel avatar: a channel URL returns a Profile with its avatar, and a video costs one extra channel-page request to fill the uploader's avatar (skipped when avatars aren't wanted). Playlist URLs aren't supported.
-- **gallery-dl:** images and carousels, single posts or whole collections. Metadata field names differ per site, so its adapter has a small mapper per platform.
+- **yt-dlp:** video and audio streams with every format, and uniform metadata (`id`, `title`, `uploader`, `timestamp`, `extractor_key`). On YouTube it also gives the channel avatar: a channel URL returns a Profile with its avatar, and a video costs one extra channel-page request to fill the uploader's avatar (skipped when avatars aren't wanted). Playlist URLs aren't supported. On Instagram it reads public posts logged out, from the JSON embedded in the post page or, when `curl_cffi` is installed, from the logged-out GraphQL query the website uses, which is why it leads Instagram's images and metadata. A carousel comes back with every image and video.
+- **gallery-dl:** images and carousels, single posts or whole collections. Metadata field names differ per site, so its adapter has a small mapper per platform. On Instagram it only uses the app API, which redirects to the login page without a session, so there it is a fallback.
 - **cobalt:** a working media URL when the others fail. It returns almost no metadata, so it is never the metadata source. It runs only as a remote server, on a datacenter IP that Instagram rate-limits sooner, so it is always a fallback.
 - **native:** our own code. Threads posts (JSON embedded in the post page), Instagram profile pictures (`web_profile_info`), and the generic fallback (`og:image` and `og:video` tags).
 
@@ -147,6 +153,8 @@ The CLI copies yt-dlp's flags where they mean the same thing, so it feels famili
 | `content-dl -f "bv*+ba/b" URL` | yt-dlp format selection, passed through for video items |
 | `content-dl -o "%(platform)s/%(uploader.username)s/%(id)s_%(index)s.%(ext)s" URL` | Output file name template, nested fields with dots |
 | `content-dl --provider gallery-dl URL` | Force one provider, for debugging |
+| `content-dl --cookies cookies.txt URL` | Use cookies from a Netscape cookies.txt file, and prefer logged-in routes |
+| `content-dl --cookies-from-browser firefox URL` | Same, reading the cookies from a browser's store (`BROWSER[:PROFILE]`) |
 | `content-dl --embed-metadata URL` | Write metadata into the files (ffmpeg tags for video and audio, EXIF/XMP for images) |
 | `content-dl serve --port 8080` | Start the optional HTTP server |
 
@@ -155,7 +163,7 @@ The CLI copies yt-dlp's flags where they mean the same thing, so it feels famili
 - `GET /extract?url=<url>&want=<kinds>` returns the result JSON.
 - `GET /download?url=<url>&item=<index>&kind=<kind>` streams one item's file.
 
-The Python API is the same thing without the process: `content_dl.extract(url, want=[...])` returns the result object.
+The Python API is the same thing without the process: `content_dl.extract(url, want=[...])` returns the result object, and `extract(url, cookies=Cookies(file="cookies.txt"))` passes cookies.
 
 ## Android and the Seal fork
 
@@ -176,6 +184,8 @@ content-dl runs on the phone, embedded in the Seal fork, the same way yt-dlp run
 **Updates:** yt-dlp, gallery-dl, content-dl's native providers and the routing table all update without a new APK, the same way Seal updates yt-dlp today.
 
 **cobalt on Android:** the app calls it over HTTP only when the user has configured an instance URL. Without one, cobalt is skipped.
+
+**Cookies on Android:** Seal already has a cookies setting for yt-dlp. The fork passes the same cookies to content-dl as a cookies.txt file, so the logged-in routes work on the phone too.
 
 ## Build order
 
@@ -203,6 +213,8 @@ Each milestone can be tested from the command line on desktop. Seal isn't touche
 | Risk or question | Impact | Plan |
 | --- | --- | --- |
 | Does youtubedl-android's Python runtime include `requests` and the other packages gallery-dl needs? | Blocks gallery-dl on Android | Check at the start of milestone 7; fall back to Chaquopy |
+| Heavy use of the user's cookies can get their account rate-limited or flagged | The user's own account is at risk | Cookies stay opt-in; say so in the CLI help and the fork's settings. Note that yt-dlp writes refreshed cookies back to a `--cookies` file |
+| `curl_cffi` (yt-dlp's browser impersonation) is a compiled package; its only Android wheel is arm64 for Python 3.13+ | yt-dlp loses the logged-out Instagram GraphQL route on Android and falls back to the post page | Check in milestone 7; yt-dlp works without it, so leave it out of the Android bundle if it won't install |
 | Instagram and Threads change their page JSON and endpoints without notice | Native providers break | Keep native providers small, test them against saved pages, ship fixes as runtime updates |
 | Rate limits on Instagram and Threads, even from a mobile IP | Requests fail after heavy use | Cache results, back off on errors, fall back to the next provider |
 | cobalt's public instance requires bot verification | Can't rely on it | Self-host it; treat it as optional |
