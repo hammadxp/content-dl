@@ -1,12 +1,28 @@
-"""Keep the offline suite offline: native providers and the downloader can't reach the network outside live tests.
+"""Keep the offline suite offline and independent of the machine's own config.
+
+Native providers, cobalt and the downloader can't reach the network outside live tests, and
+the user's routing override file is ignored (and outside live tests, the cobalt env vars too).
 
 Live tests are named ``test_live_*`` and are skipped unless CONTENT_DL_LIVE=1.
 """
 
+from pathlib import Path
+
 import pytest
 
 from content_dl.providers import ProviderError
+from content_dl import router
 from content_dl.providers.native import http
+
+
+@pytest.fixture(autouse=True)
+def isolated_config(request, monkeypatch):
+    monkeypatch.setattr(router, "config_folder_file", lambda: Path("/nonexistent/content-dl/routes.json"))
+    if request.node.name.startswith("test_live_"):
+        return
+
+    for name in ("CONTENT_DL_ROUTES", "CONTENT_DL_COBALT_URL", "CONTENT_DL_COBALT_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture(autouse=True)
@@ -19,3 +35,4 @@ def offline_native_http(request, monkeypatch):
 
     monkeypatch.setattr(http, "get", no_network)
     monkeypatch.setattr(http, "stream", no_network)
+    monkeypatch.setattr(http, "post_json", no_network)

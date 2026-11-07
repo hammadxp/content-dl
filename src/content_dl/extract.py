@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import os
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from content_dl.merge import merge
-from content_dl.providers import Cookies, ProviderError, get_provider, provider_covers
-from content_dl.router import KIND_COLUMNS, columns_for, detect_platform, routes_for
+from content_dl.providers import CobaltInstance, Cookies, ProviderError, get_provider, provider_covers
+from content_dl.router import KIND_COLUMNS, RoutingConfig, columns_for, detect_platform, load_config
 from content_dl.schema import ITEM_KINDS, ItemKind, Post, Profile, Result
 
 
@@ -60,9 +62,17 @@ def _keep_kinds(result: Result, want: list[ItemKind] | None) -> Result:
 class _Fetcher:
     """Runs each provider at most once per extraction and remembers what it returned."""
 
-    def __init__(self, url: str, platform: str, kinds: list[ItemKind] | None, cookies: Cookies | None) -> None:
+    def __init__(
+        self,
+        url: str,
+        platform: str,
+        kinds: list[ItemKind] | None,
+        cookies: Cookies | None,
+        cobalt: CobaltInstance | None,
+    ) -> None:
         self.url = url
         self.cookies = cookies
+        self.cobalt = cobalt
         self.platform = platform
         self.kinds = kinds
         self.results: dict[str, Result] = {}
@@ -72,7 +82,7 @@ class _Fetcher:
         if name not in self.results and name not in self.errors:
             try:
                 # known is a copy, so a provider can't change what earlier providers returned.
-                provider = get_provider(name, self.cookies)
+                provider = get_provider(name, self.cookies, self.cobalt)
                 self.results[name] = provider.extract(self.url, self.platform, self.kinds, known=dict(self.results))
             except ProviderError as error:
                 self.errors[name] = str(error)
@@ -107,6 +117,8 @@ def extract(
     want: Iterable[str] | None = None,
     provider: str | None = None,
     cookies: Cookies | None = None,
+    routes: str | os.PathLike[str] | Mapping[str, Any] | RoutingConfig | None = None,
+    cobalt: CobaltInstance | str | None = None,
 ) -> Result:
     """Extract everything at ``url`` and return it as a Post or Profile.
 
@@ -114,6 +126,10 @@ def extract(
     filled. ``provider`` forces one provider and skips the routing table and the merger, for
     debugging. ``cookies`` are passed to every provider, and switch the platform to its
     cookie routes (on Instagram, gallery-dl's logged-in API leads images and metadata).
+    ``routes`` overrides the routing table (a JSON file path or a dict in the same format, see
+    ``content_dl.router``); without it the user's override file applies, if there is one.
+    ``cobalt`` is the cobalt instance to call (a URL or ``CobaltInstance``), defaulting to
+    ``CONTENT_DL_COBALT_URL``; without one, cobalt is skipped.
 
     Each routing column (metadata, then one per wanted kind) tries its providers left to right
     until one returns what the column asks for. A provider runs at most once, and everything
@@ -121,23 +137,25 @@ def extract(
     fields or items another column's provider left out.
     """
     kinds = normalise_want(want)
-    platform = detect_platform(url)
+    config = load_config(routes)
+    platform = detect_platform(url, config)
+    instance = CobaltInstance(cobalt) if isinstance(cobalt, str) else cobalt or CobaltInstance.from_env()
 
     if provider:
         try:
-            return _keep_kinds(get_provider(provider, cookies).extract(url, platform, kinds), kinds)
+            return _keep_kinds(get_provider(provider, cookies, instance).extract(url, platform, kinds), kinds)
         except ProviderError as error:
             raise ExtractionError(str(error)) from error
 
-    routes = routes_for(platform, with_cookies=bool(cookies))
+    row = config.routes_for(platform, with_cookies=bool(cookies))
     columns = columns_for(kinds)
-    if not any(provider_covers(name, platform) for column in columns for name in routes.get(column, [])):
-        raise ExtractionError(f"no provider can handle {platform} yet")
+    if not any(provider_covers(name, platform, instance) for column in columns for name in row.get(column, [])):
+        raise ExtractionError(f"no provider can handle {platform} with the current routing config")
 
-    fetcher = _Fetcher(url, platform, kinds, cookies)
+    fetcher = _Fetcher(url, platform, kinds, cookies, instance)
     for column in columns:
-        for name in routes.get(column, []):
-            if not provider_covers(name, platform):
+        for name in row.get(column, []):
+            if not provider_covers(name, platform, instance):
                 continue
 
             result = fetcher.get(name)
@@ -147,4 +165,4 @@ def extract(
     if not fetcher.results:
         raise ExtractionError("; ".join(fetcher.errors.values()))
 
-    return _keep_kinds(merge(fetcher.results, routes, kinds), kinds)
+    return _keep_kinds(merge(fetcher.results, row, kinds), kinds)

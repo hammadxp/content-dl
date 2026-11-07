@@ -112,7 +112,7 @@ The same account's profile URL returns a Profile at the top level, with no `uplo
 
 ## Providers and routing
 
-The router maps a URL to a platform, then looks up which providers to try for each item kind. Providers in a cell are tried left to right, and their results are merged, so a later provider can fill fields an earlier one left empty. The table lives in a JSON config so it can change without a code release.
+The router maps a URL to a platform, then looks up which providers to try for each item kind. Providers in a cell are tried left to right, and their results are merged, so a later provider can fill fields an earlier one left empty. The table lives in a JSON config so it can change without a code release. The defaults ship as `routes.json` in the package; a user file (`--routes FILE`, `CONTENT_DL_ROUTES`, or `content-dl/routes.json` in the user config folder) overrides single cells, adds domains and platforms, and can `disable` a provider on one platform or on all (`"*"`). cobalt runs only when an instance is configured (`--cobalt-url` or `CONTENT_DL_COBALT_URL`, with an optional API key); otherwise its cells are skipped.
 
 | Platform | video / audio | images | thumbnail | avatar | metadata |
 | --- | --- | --- | --- | --- | --- |
@@ -201,7 +201,7 @@ Each milestone can be tested from the command line on desktop. Seal isn't touche
    - Done when: a Threads carousel and an Instagram profile URL both return complete results.
 5. [x] **Downloader.** `--want`, `-o` templates, `--embed-metadata`.
    - Done when: one command saves a mixed post's files with correct names and embedded metadata.
-6. [ ] **cobalt provider and the routing config.** Fallbacks driven by the JSON table.
+6. [x] **cobalt provider and the routing config.** Fallbacks driven by the JSON table.
    - Done when: turning off yt-dlp for a platform in the config makes cobalt serve that platform's video.
 7. [ ] **Android.** content-dl running inside the Seal fork's Python runtime.
    - Done when: the fork prints `extract()` output for a shared URL on a real phone.

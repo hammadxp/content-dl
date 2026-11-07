@@ -14,7 +14,8 @@ from content_dl import __version__
 from content_dl.download import Download, download, kinds_to_extract
 from content_dl.extract import ExtractionError, extract, normalise_want
 from content_dl.providers.base import Cookies
-from content_dl.router import RouterError
+from content_dl.providers.cobalt import API_KEY_ENV, URL_ENV, CobaltInstance
+from content_dl.router import ROUTES_ENV, RouterError
 from content_dl.schema import Item, Result, result_to_json
 from content_dl.template import DEFAULT_TEMPLATE
 
@@ -134,6 +135,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--want", metavar="KINDS", help="only these item kinds, comma separated (images,avatar)")
     parser.add_argument("--provider", metavar="NAME", help="force one provider, for debugging")
 
+    routing = parser.add_argument_group("routing")
+    routing.add_argument(
+        "--routes",
+        metavar="FILE",
+        help=f"JSON file that overrides the routing table (default: {ROUTES_ENV}, then content-dl/routes.json"
+        " in the user config folder)",
+    )
+    routing.add_argument(
+        "--cobalt-url",
+        metavar="URL",
+        help=f"self-hosted cobalt instance to use as a fallback (default: {URL_ENV}); without one cobalt is skipped",
+    )
+    routing.add_argument(
+        "--cobalt-api-key", metavar="KEY", help=f"API key for the cobalt instance (default: {API_KEY_ENV})"
+    )
+
     files = parser.add_argument_group("download")
     files.add_argument(
         "-f", "--format", metavar="FORMAT", help='yt-dlp format selection for video items, such as "bv*+ba/b"'
@@ -191,7 +208,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         want = normalise_want(args.want.split(",")) if args.want else None
         cookies = Cookies(file=args.cookies, browser=args.cookies_from_browser)
         extract_want = kinds_to_extract(want) if downloading else want
-        result = extract(args.url, want=extract_want, provider=args.provider, cookies=cookies or None)
+        cobalt = CobaltInstance.from_env()
+        if args.cobalt_url or args.cobalt_api_key:
+            url = args.cobalt_url or (cobalt.url if cobalt else None)
+            if not url:
+                raise ValueError("--cobalt-api-key needs --cobalt-url or " + URL_ENV)
+
+            cobalt = CobaltInstance(url, args.cobalt_api_key or (cobalt.api_key if cobalt else None))
+
+        result = extract(
+            args.url,
+            want=extract_want,
+            provider=args.provider,
+            cookies=cookies or None,
+            routes=args.routes,
+            cobalt=cobalt,
+        )
     except (ExtractionError, RouterError, ValueError) as error:
         print(f"content-dl: error: {error}", file=sys.stderr)
         return 1

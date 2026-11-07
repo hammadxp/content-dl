@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "domains": {
+    "youtube.com": "youtube",
+    "youtu.be": "youtube",
+    "youtube-nocookie.com": "youtube",
+    "instagram.com": "instagram",
+    "instagr.am": "instagram",
+    "threads.net": "threads",
+    "threads.com": "threads",
+    "x.com": "x",
+    "twitter.com": "x",
+    "tiktok.com": "tiktok",
+    "reddit.com": "reddit",
+    "redd.it": "reddit",
+    "snapchat.com": "snapchat"
+  },
+  "routes": {
+    "youtube": {
+      "video": ["yt-dlp"],
+      "images": [],
+      "thumbnail": ["yt-dlp"],
+      "avatar": ["yt-dlp"],
+      "metadata": ["yt-dlp"]
+    },
+    "instagram": {
+      "video": ["yt-dlp", "cobalt", "gallery-dl"],
+      "images": ["yt-dlp", "gallery-dl", "cobalt"],
+      "thumbnail": ["yt-dlp"],
+      "avatar": ["native"],
+      "metadata": ["yt-dlp", "gallery-dl"]
+    },
+    "threads": {
+      "video": ["native"],
+      "images": ["native"],
+      "thumbnail": ["native"],
+      "avatar": ["native"],
+      "metadata": ["native"]
+    },
+    "x": {
+      "video": ["yt-dlp", "cobalt"],
+      "images": ["gallery-dl", "cobalt"],
+      "thumbnail": ["yt-dlp"],
+      "avatar": ["gallery-dl"],
+      "metadata": ["yt-dlp", "gallery-dl"]
+    },
+    "tiktok": {
+      "video": ["yt-dlp", "cobalt"],
+      "images": ["gallery-dl"],
+      "thumbnail": ["yt-dlp"],
+      "avatar": ["gallery-dl"],
+      "metadata": ["yt-dlp"]
+    },
+    "reddit": {
+      "video": ["yt-dlp", "cobalt"],
+      "images": ["gallery-dl"],
+      "thumbnail": ["yt-dlp"],
+      "avatar": ["gallery-dl"],
+      "metadata": ["gallery-dl", "yt-dlp"]
+    },
+    "snapchat": {
+      "video": ["cobalt"],
+      "images": ["cobalt"],
+      "thumbnail": ["cobalt"],
+      "avatar": [],
+      "metadata": ["native"]
+    },
+    "unknown": {
+      "video": ["yt-dlp", "gallery-dl", "generic"],
+      "images": ["gallery-dl", "generic"],
+      "thumbnail": ["generic"],
+      "avatar": [],
+      "metadata": ["yt-dlp", "generic"]
+    }
+  },
+  "routes_with_cookies": {
+    "instagram": {
+      "images": ["gallery-dl", "yt-dlp", "cobalt"],
+      "metadata": ["gallery-dl", "yt-dlp"]
+    }
+  },
+  "disable": {}
+}

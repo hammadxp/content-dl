@@ -242,14 +242,14 @@ def test_extract_reports_provider_errors(monkeypatch) -> None:
         extract(VIDEO_URL)
 
 
-def test_extract_fails_clearly_when_no_provider_is_built() -> None:
+def test_extract_fails_clearly_when_no_provider_is_usable() -> None:
     with pytest.raises(ExtractionError, match="no provider can handle snapchat"):
         extract("https://www.snapchat.com/spotlight/abc")
 
 
 def test_forcing_an_unknown_provider_fails(offline_ytdlp) -> None:
     with pytest.raises(ExtractionError, match="unknown provider"):
-        extract(VIDEO_URL, provider="cobalt")
+        extract(VIDEO_URL, provider="generic")
 
 
 # CLI

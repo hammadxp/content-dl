@@ -9,6 +9,9 @@ Rules (SPEC.md, "Data model" rule 2):
   copy wins and the lower one only fills fields it left unset.
 - A provider outside a kind's column is a last resort: its items of that kind are used only
   when no provider in the column returned any.
+- A fallback provider (cobalt) is used for a kind only when no other provider returned that
+  kind. Its items carry no media id and often a tunnel URL, so they can't be matched to other
+  providers' copies and would otherwise show up twice.
 """
 
 from __future__ import annotations
@@ -25,6 +28,9 @@ KIND_ORDER: dict[str, int] = {"video": 0, "audio": 1, "image": 2, "thumbnail": 3
 
 # Fields a lower-priority duplicate may fill. provider and extra describe the winning copy only.
 FILLABLE_ITEM_FIELDS = tuple(f.name for f in fields(Item) if f.name not in ("kind", "provider", "extra"))
+
+# Providers whose items can't be matched against other providers' items.
+FALLBACK_PROVIDERS = frozenset({"cobalt"})
 
 POST_FIELDS = ("id", "title", "description", "upload_date", "url")
 PROFILE_FIELDS = ("id", "username", "name", "url")
@@ -102,11 +108,16 @@ def _ordered(column: Sequence[str], results: Mapping[str, Result]) -> tuple[list
 
 def _merge_kind(kind: str, routes: Mapping[str, Sequence[str]], results: Mapping[str, Result]) -> list[Item]:
     own, rest = _ordered(routes.get(KIND_COLUMNS[kind], []), results)
-    items = merge_items([_items_of(results[name], kind) for name in own])
-    if items:
-        return items
+    for names in (own, rest):
+        groups = {name: _items_of(results[name], kind) for name in names}
+        if any(items for name, items in groups.items() if name not in FALLBACK_PROVIDERS):
+            groups = {name: items for name, items in groups.items() if name not in FALLBACK_PROVIDERS}
 
-    return merge_items([_items_of(results[name], kind) for name in rest])
+        items = merge_items(list(groups.values()))
+        if items:
+            return items
+
+    return []
 
 
 def _merge_avatar(routes: Mapping[str, Sequence[str]], results: Mapping[str, Result]) -> Item | None:
