@@ -28,12 +28,12 @@ jobs:
             file: content-dl_linux
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           # build_exe.py counts commits for the version.
           fetch-depth: 0
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
 
@@ -51,7 +51,7 @@ jobs:
       - name: Smoke test
         run: ./dist/${{ matrix.file }} --version
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
           path: dist/${{ matrix.file }}
