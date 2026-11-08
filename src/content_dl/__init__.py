@@ -17,7 +17,12 @@ from content_dl.schema import (
     to_utc_iso,
 )
 
-__version__ = "0.1.0"
+# INFO: Release builds (scripts/build_exe.py) generate _version.py as "1.<commit count>". Source
+# installs don't have it, so they report the dev version.
+try:
+    from content_dl._version import __version__
+except ImportError:
+    __version__ = "1.0.dev"
 
 __all__ = [
     "Cookies",

@@ -39,7 +39,37 @@ content-dl works like yt-dlp: you can download what a link holds, list it first,
 
 ## Install
 
-### 1. Install the requirements
+There are two ways to install content-dl. The executable is the easiest: one file, no Python needed.
+
+### Download the executable (recommended)
+
+Download the file for your system from the [latest release](https://github.com/hammadxp/content-dl/releases/latest):
+
+| System | File |
+| --- | --- |
+| Windows | `content-dl.exe` |
+| macOS | `content-dl_macos` |
+| Linux | `content-dl_linux` |
+
+Put it in a folder on your PATH (or in the folder you download into), then check it:
+
+```bash
+content-dl --version
+```
+
+On macOS and Linux, rename it to `content-dl` and make it executable first:
+
+```bash
+chmod +x content-dl
+```
+
+The executable already includes Python, yt-dlp and gallery-dl. You still need ffmpeg and Deno for YouTube (see the table below; skip the Python and Git rows). To update, download the newest release and replace the file.
+
+Releases are numbered `v1.N`, where N is the commit the build came from, so a higher number is always newer.
+
+### Install from source
+
+#### 1. Install the requirements
 
 | Requirement | Why | How to get it |
 | --- | --- | --- |
@@ -60,7 +90,7 @@ python --version
 ffmpeg -version
 ```
 
-### 2. Install content-dl
+#### 2. Install content-dl
 
 ```bash
 git clone https://github.com/hammadxp/content-dl.git
@@ -558,7 +588,9 @@ Each one does the same as its flag, for every command, so you can set it once in
 
 ## Updating
 
-Sites change often, and yt-dlp and gallery-dl ship fixes every few days. Update them regularly, with the virtual environment active:
+**Executable.** Download the newest file from the [latest release](https://github.com/hammadxp/content-dl/releases/latest) and replace the old one. New releases follow yt-dlp and gallery-dl fixes closely, so update when a site stops working.
+
+**From source.** Sites change often, and yt-dlp and gallery-dl ship fixes every few days. Update them regularly, with the virtual environment active:
 
 ```bash
 pip install -U yt-dlp gallery-dl
@@ -595,5 +627,19 @@ python scripts/live_check.py
 ```bash
 python scripts/live_check.py --only instagram,facebook --cookies cookies.txt
 ```
+
+Build the executable locally (it lands in `dist/`). [bundle/requirements.txt](bundle/requirements.txt) holds the exact versions releases ship:
+
+```bash
+pip install -r bundle/requirements.txt .
+```
+
+```bash
+python scripts/build_exe.py
+```
+
+Pushing to `main` builds the Windows, macOS and Linux executables on GitHub Actions and publishes them as release `v1.<commit count>` ([.github/workflows/release.yml](.github/workflows/release.yml)). Commits that only change docs or tests don't make a release. Run the workflow by hand from the Actions tab to release without a code change.
+
+Dependabot ([.github/dependabot.yml](.github/dependabot.yml)) checks `bundle/requirements.txt` every day. When yt-dlp, gallery-dl or another bundled tool has a new release, it opens a PR that bumps the pin. [.github/workflows/checks.yml](.github/workflows/checks.yml) tests and builds every PR on all three systems. Dependabot PRs that pass are merged automatically and published as a new release. A failing one stays open for you to look at. `pyproject.toml` only holds the minimum versions for source installs and doesn't change for these updates.
 
 [SPEC.md](SPEC.md) describes the design: the data model, how each site is read, and why the tools are ordered as they are.

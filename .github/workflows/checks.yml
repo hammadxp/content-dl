@@ -1,0 +1,49 @@
+# Tests and builds every PR to main. Dependabot PRs that pass are merged and released automatically.
+#
+# INFO: This merges directly instead of using GitHub's auto-merge setting. Auto-merge needs a branch
+# rule that requires these checks, which would also block your own direct pushes to main.
+
+name: Checks
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+
+  merge-dependabot:
+    needs: build
+    # Both checks: the PR was opened by Dependabot, and nobody else pushed to it since.
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_URL: ${{ github.event.pull_request.html_url }}
+    steps:
+      # Dependabot only watches bundle/, so anything else in the PR means it isn't a plain version bump.
+      - name: Check changed files
+        run: |
+          unexpected="$(gh pr diff "$PR_URL" --name-only | grep -v '^bundle/' || true)"
+          if [ -n "$unexpected" ]; then
+            echo "Not merging, the PR changes files outside bundle/:"
+            echo "$unexpected"
+            exit 1
+          fi
+
+      - name: Merge
+        run: gh pr merge "$PR_URL" --squash --delete-branch
+
+      # INFO: GitHub doesn't start workflows from pushes made with the Actions token, so the merge
+      # above doesn't trigger release.yml on its own. Starting it by hand is allowed.
+      - name: Release
+        run: gh workflow run release.yml --ref main

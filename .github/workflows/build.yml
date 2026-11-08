@@ -1,0 +1,59 @@
+# Tests content-dl and builds the Windows, macOS and Linux executables. Not run on its own: release.yml
+# uses it to publish, and checks.yml uses it to check PRs before they're merged.
+
+name: Build
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: windows-latest
+            name: content-dl
+            file: content-dl.exe
+          - os: macos-latest
+            name: content-dl_macos
+            file: content-dl_macos
+          # INFO: The oldest available runner keeps the glibc requirement low, so the binary runs on
+          # older distributions too.
+          - os: ubuntu-22.04
+            name: content-dl_linux
+            file: content-dl_linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # build_exe.py counts commits for the version.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r bundle/requirements.txt . pytest
+
+      - name: Test
+        run: python -m pytest -q
+
+      - name: Build
+        run: python scripts/build_exe.py --name ${{ matrix.name }}
+
+      - name: Smoke test
+        run: ./dist/${{ matrix.file }} --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: dist/${{ matrix.file }}
+          if-no-files-found: error
+          retention-days: 7
