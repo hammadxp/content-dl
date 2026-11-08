@@ -158,6 +158,9 @@ def extract(
     if platform == "reddit":
         url = NativeProvider(cookies).resolve_reddit_url(url)
 
+    if platform == "snapchat":
+        url = NativeProvider(cookies).resolve_snapchat_url(url)
+
     if platform == "pinterest":
         try:
             url = NativeProvider(cookies).resolve_pinterest_url(url)

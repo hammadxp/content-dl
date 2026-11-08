@@ -69,11 +69,11 @@ def ytdlp_calls(monkeypatch):
 def test_shipped_config_matches_the_spec_table() -> None:
     assert routes_for("instagram")["video"] == ["yt-dlp", "cobalt", "gallery-dl"]
     assert routes_for("snapchat") == {
-        "video": ["cobalt"],
-        "images": ["cobalt"],
-        "thumbnail": ["cobalt"],
-        "avatar": [],
-        "metadata": ["native"],
+        "video": ["native", "gallery-dl", "cobalt"],
+        "images": [],
+        "thumbnail": ["native", "gallery-dl"],
+        "avatar": ["native"],
+        "metadata": ["native", "gallery-dl"],
     }
     assert routes_for("example.com") == routes_for("unknown")
     assert detect_platform("https://vm.tiktok.com/abc") == "tiktok"

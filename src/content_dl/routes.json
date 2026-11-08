@@ -87,11 +87,11 @@
       "metadata": ["native", "yt-dlp", "gallery-dl"]
     },
     "snapchat": {
-      "video": ["cobalt"],
-      "images": ["cobalt"],
-      "thumbnail": ["cobalt"],
-      "avatar": [],
-      "metadata": ["native"]
+      "video": ["native", "gallery-dl", "cobalt"],
+      "images": [],
+      "thumbnail": ["native", "gallery-dl"],
+      "avatar": ["native"],
+      "metadata": ["native", "gallery-dl"]
     },
     "unknown": {
       "video": ["yt-dlp", "gallery-dl", "generic"],

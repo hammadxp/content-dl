@@ -337,9 +337,10 @@ def test_forcing_native_on_a_post_needs_a_username(instagram_profiles) -> None:
 
 
 def test_native_is_skipped_on_platforms_it_does_not_cover() -> None:
-    # Snapchat's metadata column lists native, which has no Snapchat extractor yet.
-    with pytest.raises(ExtractionError, match="no provider can handle snapchat"):
-        extract("https://www.snapchat.com/spotlight/abc")
+    # native has no YouTube extractor, so a row that lists only native leaves nothing to run.
+    only_native = {column: ["native"] for column in ("video", "images", "thumbnail", "avatar", "metadata")}
+    with pytest.raises(ExtractionError, match="no provider can handle youtube"):
+        extract("https://www.youtube.com/watch?v=abc", routes={"routes": {"youtube": only_native}})
 
 
 # Live checks

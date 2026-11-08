@@ -329,6 +329,37 @@
         "video": 1
       },
       "cobalt": true
+    },
+    {
+      "platform": "snapchat",
+      "name": "spotlight (short link)",
+      "url": "https://snapchat.com/t/xP8xMiKB",
+      "want": [
+        "video"
+      ],
+      "expect": {
+        "video": 1
+      }
+    },
+    {
+      "platform": "snapchat",
+      "name": "spotlight",
+      "url": "https://www.snapchat.com/spotlight/W7_EDlXWTBiXAEEniNoMPwAAYcGVxbHFna2dsAaEF6cRRAaEF6cQ4AAAAAw?share_id=eYLVaGzEc4w&locale=en-US-u-fw-mon-mu-celsius",
+      "want": null,
+      "expect": {
+        "video": 1,
+        "thumbnail": 1,
+        "avatar": 1
+      }
+    },
+    {
+      "platform": "snapchat",
+      "name": "profile",
+      "url": "https://www.snapchat.com/add/matrix.001?share_id=xev-3PfdJng&locale=en-US-u-fw-mon-mu-celsius",
+      "want": null,
+      "expect": {
+        "avatar": 1
+      }
     }
   ]
 }

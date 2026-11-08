@@ -243,8 +243,8 @@ def test_extract_reports_provider_errors(monkeypatch) -> None:
 
 
 def test_extract_fails_clearly_when_no_provider_is_usable() -> None:
-    with pytest.raises(ExtractionError, match="no provider can handle snapchat"):
-        extract("https://www.snapchat.com/spotlight/abc")
+    with pytest.raises(ExtractionError, match="no provider can handle tiktok"):
+        extract("https://www.tiktok.com/@a/video/1", routes={"disable": {"tiktok": ["yt-dlp", "gallery-dl"]}})
 
 
 def test_forcing_an_unknown_provider_fails(offline_ytdlp) -> None:

@@ -24,7 +24,7 @@ def provider_covers(name: str, platform: str, cobalt: CobaltInstance | None = No
 
     cobalt is usable only with an instance to call.
 
-    >>> provider_covers("native", "threads"), provider_covers("native", "snapchat"), provider_covers("cobalt", "x")
+    >>> provider_covers("native", "threads"), provider_covers("native", "youtube"), provider_covers("cobalt", "x")
     (True, False, False)
     >>> provider_covers("cobalt", "x", CobaltInstance("https://cobalt.example.com"))
     True

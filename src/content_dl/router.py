@@ -28,8 +28,15 @@ Why the defaults are ordered as they are:
   in the cookie row, where they can stand in if the embed page changes.
 - cobalt returns almost no metadata and runs on a datacenter IP, so it is always a fallback.
 
-Providers that aren't built (generic), native on platforms it has no extractor for
-(Snapchat), and cobalt without a configured instance are listed anyway and skipped at
+- Snapchat: native leads because its pages dropped the ``__NEXT_DATA__`` blob that yt-dlp's and
+  gallery-dl's Spotlight extractors read (Nov 8, 2026). gallery-dl still reads highlights,
+  stories and profiles, so it follows. yt-dlp has only a Spotlight extractor, so it isn't listed.
+  gallery-dl is left out of images and avatar: as the metadata fallback it has already run on
+  every URL native can't read, and its photos still merge in from outside the column. Listed
+  there, it would only be asked about a Spotlight (always a video) or an anonymous poster's
+  avatar, and fail.
+
+Providers that aren't built (generic) and cobalt without a configured instance are listed anyway and skipped at
 extraction time.
 """
 

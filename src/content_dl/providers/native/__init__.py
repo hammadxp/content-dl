@@ -6,10 +6,9 @@
 - Pinterest profiles and avatars, from the web app's ``UserResource``, and pin.it links resolved.
 - Reddit posts from the public embed page (logged out), profile and community icons from
   ``about.json``, and share links resolved.
+- Snapchat Spotlight videos and profiles, from the page's schema.org JSON, and share links resolved.
 
-The routing table also lists ``native`` for Snapchat metadata, and the unknown-site row lists
-``generic`` (og: tags); neither is built yet, so ``platforms`` leaves Snapchat out and
-extract() skips native there.
+The unknown-site row lists ``generic`` (og: tags), which isn't built yet; extract() skips it.
 """
 
 from __future__ import annotations
@@ -18,7 +17,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from content_dl.providers.base import Cookies, NeedsKnownError, ProviderError
-from content_dl.providers.native import facebook, http, instagram, pinterest, reddit, threads
+from content_dl.providers.native import facebook, http, instagram, pinterest, reddit, snapchat, threads
 from content_dl.schema import Item, Post, Profile, Result
 
 NAME = "native"
@@ -26,7 +25,7 @@ NAME = "native"
 
 class NativeProvider:
     name = NAME
-    platforms = frozenset({"threads", "instagram", "facebook", "pinterest", "reddit"})
+    platforms = frozenset({"threads", "instagram", "facebook", "pinterest", "reddit", "snapchat"})
 
     def __init__(self, cookies: Cookies | None = None) -> None:
         self.cookies = cookies
@@ -211,6 +210,27 @@ class NativeProvider:
 
         return post
 
+    def resolve_snapchat_url(self, url: str) -> str:
+        """The page a Snapchat share link opens, in its canonical form. On a network error the link is kept."""
+        if snapchat.is_short_url(url):
+            try:
+                response = http.get(url, cookies=self.site_cookies("snapchat.com"))
+            except ProviderError:
+                return url
+
+            if response.status == 200:
+                url = response.url
+
+        return snapchat.clean_url(url)
+
+    def extract_snapchat(self, url: str, platform: str) -> Result:
+        kind, _ = snapchat.parse_url(url)
+        page = self.fetch_page(snapchat.page_url(url), "snapchat.com")
+        if kind == "profile":
+            return snapchat.profile_from_page(page, platform)
+
+        return snapchat.post_from_page(page, url, platform)
+
     def extract_threads(self, url: str, platform: str) -> Result:
         kind, _, _ = threads.parse_url(url)
         html = self.fetch_page(url, "threads.com")
@@ -248,6 +268,9 @@ class NativeProvider:
 
         if platform == "reddit":
             return self.extract_reddit(url, platform, want)
+
+        if platform == "snapchat":
+            return self.extract_snapchat(url, platform)
 
         raise ProviderError(f"native: no extractor for {platform}")
 
