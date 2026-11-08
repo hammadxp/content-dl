@@ -96,15 +96,15 @@ def test_logged_in_carousel_leads_with_gallery_dl(recorded, cookie_file) -> None
     assert (post.uploader.avatar.url, post.uploader.avatar.provider) == (AVATAR_URL, "gallery-dl")
 
 
-def test_logged_in_avatar_is_skipped_when_not_wanted(recorded, cookie_file) -> None:
-    post = extract(POST_URL, want=["image"], cookies=Cookies(file=cookie_file))
+def test_logged_in_avatar_is_skipped_when_not_requested(recorded, cookie_file) -> None:
+    post = extract(POST_URL, media_types=["image"], cookies=Cookies(file=cookie_file))
 
     assert [run[0] for run in recorded] == ["gallery-dl"]
     assert post.uploader.avatar is None
 
 
 def test_logged_in_profile_url_gets_its_avatar_from_gallery_dl(recorded, cookie_file) -> None:
-    profile = extract("https://www.instagram.com/someone/", want=["avatar"], cookies=Cookies(file=cookie_file))
+    profile = extract("https://www.instagram.com/someone/", media_types=["avatar"], cookies=Cookies(file=cookie_file))
 
     assert (profile.username, profile.name, profile.avatar.provider) == ("someone", "Some One", "gallery-dl")
 
@@ -118,7 +118,7 @@ def test_every_provider_gets_the_cookies(recorded, cookie_file) -> None:
 
 
 def test_browser_cookies_reach_yt_dlp(recorded) -> None:
-    extract(POST_URL, want=["video"], cookies=Cookies(browser="firefox:work"))
+    extract(POST_URL, media_types=["video"], cookies=Cookies(browser="firefox:work"))
 
     assert dict(recorded)["yt-dlp"] == {"cookiesfrombrowser": ("firefox", "work", None, None)}
 
@@ -151,7 +151,7 @@ def test_cli_reports_a_missing_cookie_file(tmp_path, capsys) -> None:
 
 
 def test_profile_url_skips_video_and_image_providers(recorded, cookie_file) -> None:
-    # Everything is wanted, but once gallery-dl says it's a profile only the avatar is left.
+    # Everything is requested, but once gallery-dl says it's a profile only the avatar is left.
     extract("https://www.instagram.com/someone/?srtk=x", cookies=Cookies(file=cookie_file))
 
     assert [run[0] for run in recorded] == ["gallery-dl"]

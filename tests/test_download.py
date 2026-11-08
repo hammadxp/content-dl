@@ -200,7 +200,7 @@ def test_audio_only_post_downloads_its_audio() -> None:
     assert [item.media_type for item, _ in select_items(post)] == ["audio"]
 
 
-def test_want_picks_media_types_and_the_uploaders_avatar() -> None:
+def test_media_types_pick_items_and_the_uploaders_avatar() -> None:
     post = carousel_post()
     chosen = select_items(post, ["images", "avatar"])
 
@@ -219,7 +219,7 @@ def test_profile_defaults_to_its_avatar() -> None:
 def test_mixed_post_downloads_with_names(tmp_path, fake_files, fake_ytdlp_download) -> None:
     calls, _ = fake_ytdlp_download
     template = str(tmp_path / "%(uploader.username)s" / "%(id)s_%(index)s_%(media_type)s.%(ext)s")
-    outcomes = download(carousel_post(), want=["image", "video", "avatar"], output=template)
+    outcomes = download(carousel_post(), media_types=["image", "video", "avatar"], output=template)
 
     assert [outcome.status for outcome in outcomes] == ["saved"] * 3
     assert sorted(path.name for path in (tmp_path / "someone").iterdir()) == [
@@ -235,14 +235,16 @@ def test_mixed_post_downloads_with_names(tmp_path, fake_files, fake_ytdlp_downlo
 
 def test_format_selection_applies_to_videos_only(tmp_path, fake_ytdlp_download) -> None:
     calls, _ = fake_ytdlp_download
-    download(carousel_post(), want=["video", "audio"], output=str(tmp_path / "%(media_type)s.%(ext)s"), format="bv*+ba/b")
+    output = str(tmp_path / "%(media_type)s.%(ext)s")
+    download(carousel_post(), media_types=["video", "audio"], output=output, format="bv*+ba/b")
 
     assert [call["format"] for call in calls] == ["bv*+ba/b", "ba/b"]
 
 
 def test_max_quality_sorts_videos_only(tmp_path, fake_ytdlp_download) -> None:
     calls, _ = fake_ytdlp_download
-    download(carousel_post(), want=["video", "audio"], output=str(tmp_path / "%(media_type)s.%(ext)s"), max_quality=1080)
+    output = str(tmp_path / "%(media_type)s.%(ext)s")
+    download(carousel_post(), media_types=["video", "audio"], output=output, max_quality=1080)
 
     assert [call.get("format_sort") for call in calls] == [["res:1080"], None]
 
@@ -294,15 +296,15 @@ def test_max_quality_flag_rejects_words(capsys) -> None:
 
 def test_existing_files_are_not_downloaded_again(tmp_path, fake_files) -> None:
     template = str(tmp_path / "%(id)s_%(index)s.%(ext)s")
-    first = download(carousel_post(), want=["image"], output=template)
-    second = download(carousel_post(), want=["image"], output=template)
+    first = download(carousel_post(), media_types=["image"], output=template)
+    second = download(carousel_post(), media_types=["image"], output=template)
 
     assert (first[0].status, second[0].status) == ("saved", "exists")
     assert len(fake_files) == 1
 
 
 def test_same_name_in_one_run_gets_a_counter(tmp_path, fake_files) -> None:
-    outcomes = download(carousel_post(), want=["image", "thumbnail"], output=str(tmp_path / "%(id)s.%(ext)s"))
+    outcomes = download(carousel_post(), media_types=["image", "thumbnail"], output=str(tmp_path / "%(id)s.%(ext)s"))
 
     assert [outcome.path.name for outcome in outcomes] == ["DAsTXK3JbrA.jpg", "DAsTXK3JbrA (2).jpg"]
 
@@ -325,7 +327,8 @@ def test_one_failed_item_does_not_stop_the_others(tmp_path, monkeypatch) -> None
         yield http.Stream(url=url, content_type="image/jpeg", chunks=iter([JPEG]))
 
     monkeypatch.setattr(http, "stream", flaky)
-    outcomes = download(carousel_post(), want=["image", "thumbnail"], output=str(tmp_path / "%(media_type)s.%(ext)s"))
+    output = str(tmp_path / "%(media_type)s.%(ext)s")
+    outcomes = download(carousel_post(), media_types=["image", "thumbnail"], output=output)
 
     assert [outcome.status for outcome in outcomes] == ["failed", "saved"]
     assert "403" in outcomes[0].error
@@ -458,7 +461,7 @@ def test_video_gets_ffmpeg_tags(tmp_path, fake_ytdlp_download, sample_video) -> 
     post = carousel_post()
     post.title = "Golden hour"
 
-    outcome = download(post, want=["video"], output=str(tmp_path / "%(id)s.%(ext)s"), embed_metadata=True)[0]
+    outcome = download(post, media_types=["video"], output=str(tmp_path / "%(id)s.%(ext)s"), embed_metadata=True)[0]
     tags = probe_tags(outcome.path)
 
     assert outcome.warning is None
@@ -499,7 +502,7 @@ def test_cli_saves_a_mixed_post_with_names_and_metadata(
     assert printed.count("[download]") == 3 and "video 2:" in printed
 
 
-def test_cli_want_only_downloads_those_media_types(tmp_path, capsys, offline_instagram, fake_files) -> None:
+def test_cli_media_types_only_downloads_those_media_types(tmp_path, capsys, offline_instagram, fake_files) -> None:
     assert main([POST_URL, "--media-types", "images", "--filename-template", str(tmp_path / "%(index)s.%(ext)s")]) == 0
 
     assert sorted(path.name for path in tmp_path.iterdir()) == ["1.jpg", "3.jpg"]

@@ -17,7 +17,7 @@ from typing import Any, Literal
 from urllib.parse import urlparse
 
 from content_dl.embed import EmbedError, embed, tags_for
-from content_dl.extract import normalise_want
+from content_dl.extract import normalise_media_types
 from content_dl.providers.base import Cookies, ProviderError
 from content_dl.providers.native import http
 from content_dl.providers.ytdlp import SilentLogger, cookie_options, error_message, host_options
@@ -96,7 +96,7 @@ def parse_item_picks(spec: str) -> list[ItemPick]:
         if not name:
             continue
 
-        media_types = normalise_want([name]) or []
+        media_types = normalise_media_types([name]) or []
         if not index.strip():
             picks.append((media_types[0], None))
             continue
@@ -117,16 +117,16 @@ def _picked(item: Item, picks: list[ItemPick]) -> bool:
 
 
 def select_items(
-    result: Result, want: Iterable[str] | None = None, picks: list[ItemPick] | None = None
+    result: Result, media_types: Iterable[str] | None = None, picks: list[ItemPick] | None = None
 ) -> list[tuple[Item, Owner]]:
     """Pick the items to save, each with the object whose metadata it carries.
 
     With ``picks`` (from ``--items``), exactly those items, in the result's order. With
-    ``want``, every item of those media_types (and the avatar, if asked). Without either, the
+    ``media_types``, every item of those media_types (and the avatar, if asked). Without either, the
     defaults: every video and image, audio only where its post has no video (the video's
     download already includes the audio), and the avatar of a profile with nothing else.
     """
-    media_types = normalise_want(want)
+    media_types = normalise_media_types(media_types)
     avatar = _avatar_with_owner(result)
 
     if picks is not None:
@@ -354,7 +354,7 @@ def _save(run: _Run, result: Result, item: Item, owner: Owner) -> Download:
 
 def download(
     result: Result,
-    want: Iterable[str] | None = None,
+    media_types: Iterable[str] | None = None,
     output: str = DEFAULT_TEMPLATE,
     format: str | None = None,
     embed_metadata: bool = False,
@@ -365,7 +365,7 @@ def download(
 ) -> list[Download]:
     """Save the items of an extracted result and report what happened to each.
 
-    ``want`` picks media types as ``extract()`` does, ``picks`` names single items (see
+    ``media_types`` picks media types as ``extract()`` does, ``picks`` names single items (see
     ``parse_item_picks``), and without either the defaults of ``select_items`` apply.
     ``output`` is a yt-dlp style file name template (see ``content_dl.template``). ``format`` is a yt-dlp format selection for video items, and
     ``max_quality`` caps their shorter side in pixels (1080 for 1080p, landscape or vertical).
@@ -379,7 +379,7 @@ def download(
         output=output, format=format, max_quality=max_quality, embed_metadata=embed_metadata, cookies=cookies
     )
     downloads: list[Download] = []
-    for item, owner in select_items(result, want, picks):
+    for item, owner in select_items(result, media_types, picks):
         try:
             outcome = _save(run, result, item, owner)
         except (ProviderError, OSError, ValueError) as error:
@@ -392,8 +392,8 @@ def download(
     return downloads
 
 
-def media_types_to_extract(want: Iterable[str] | None) -> list[MediaType] | None:
-    """The media types to ask ``extract()`` for so the downloader can save ``want``.
+def media_types_to_extract(media_types: Iterable[str] | None) -> list[MediaType] | None:
+    """The media types to ask ``extract()`` for so the downloader can save ``media_types``.
 
     A video needs its audio formats to merge the best pair, even when only videos are saved.
 
@@ -402,8 +402,8 @@ def media_types_to_extract(want: Iterable[str] | None) -> list[MediaType] | None
     >>> media_types_to_extract(None) is None
     True
     """
-    media_types = normalise_want(want)
-    if media_types is not None and "video" in media_types and "audio" not in media_types:
-        media_types.append("audio")
+    chosen = normalise_media_types(media_types)
+    if chosen is not None and "video" in chosen and "audio" not in chosen:
+        chosen.append("audio")
 
-    return media_types
+    return chosen

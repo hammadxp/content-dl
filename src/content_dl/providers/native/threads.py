@@ -31,6 +31,8 @@ JSON_SCRIPT = re.compile(r"<script type=\"application/json\"[^>]*>(.*?)</script>
 POST_PATH = re.compile(r"/@(?P<username>[\w.]+)/post/(?P<code>[\w-]+)/?")
 SHORT_POST_PATH = re.compile(r"/t/(?P<code>[\w-]+)/?")
 PROFILE_PATH = re.compile(r"/@(?P<username>[\w.]+)/?")
+SIZE_HINT = re.compile(r"[?&]stp=[^&]*?_s(?P<width>\d+)x(?P<height>\d+)(?:_|&|$)")
+SHARE_PATH = re.compile(r"/share/(?P<code>[\w-]+)/?")
 
 # Threads' media_type values (shared with Instagram).
 MEDIA_IMAGE = 1
@@ -38,6 +40,27 @@ MEDIA_VIDEO = 2
 MEDIA_CAROUSEL = 8
 
 JsonDict = dict[str, Any]
+
+
+def is_share_url(url: str) -> bool:
+    """A ``/share/<code>`` link, which redirects to the post page. Its code isn't the post's shortcode.
+
+    >>> is_share_url("https://www.threads.com/share/BALHonL4O-")
+    True
+    >>> is_share_url("https://www.threads.com/@someone/post/DfaNgswkQPG")
+    False
+    """
+    return bool(SHARE_PATH.fullmatch(urlsplit(url).path))
+
+
+def clean_url(url: str) -> str:
+    """A post or profile URL without its share parameters (``xmt``, ``slof``).
+
+    >>> clean_url("https://www.threads.com/@someone/post/DfaNgswkQPG?xmt=abc&slof=1")
+    'https://www.threads.com/@someone/post/DfaNgswkQPG'
+    """
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}{parts.path}"
 
 
 def parse_url(url: str) -> tuple[str, str | None, str | None]:
@@ -126,7 +149,7 @@ def _id(value: Any) -> str | None:
 
 
 def avatar_from_user(user: JsonDict) -> Item | None:
-    """The largest HD avatar, or the small ``profile_pic_url`` (whose size the page doesn't give)."""
+    """The largest HD avatar, or the small ``profile_pic_url`` (sized from its URL)."""
     versions = [version for version in user.get("hd_profile_pic_versions") or [] if version.get("url")]
     if versions:
         best = max(versions, key=lambda version: (_size(version.get("width")) or 0))
@@ -141,7 +164,30 @@ def avatar_from_user(user: JsonDict) -> Item | None:
         )
 
     url = _text(user.get("profile_pic_url"))
-    return Item(media_type="avatar", url=url, ext=ext_from_url(url), provider=PROVIDER) if url else None
+    if not url:
+        return None
+
+    size = _size_hint(url)
+    return Item(
+        media_type="avatar",
+        url=url,
+        ext=ext_from_url(url),
+        width=size[0] if size else None,
+        height=size[1] if size else None,
+        provider=PROVIDER,
+    )
+
+
+def _size_hint(url: str) -> tuple[int, int] | None:
+    """The square size in a CDN URL's ``stp`` resize step.
+
+    >>> _size_hint("https://cdn.example/a.jpg?stp=dst-jpg_s150x150_tt6&x=1")
+    (150, 150)
+    >>> _size_hint("https://cdn.example/a.jpg") is None
+    True
+    """
+    match = SIZE_HINT.search(url)
+    return (int(match["width"]), int(match["height"])) if match else None
 
 
 def profile_from_user(user: JsonDict, platform: str) -> Profile:
@@ -209,13 +255,26 @@ def items_from_media(media: JsonDict, index: int) -> list[Item]:
     return items
 
 
-def items_from_post(post: JsonDict) -> list[Item]:
-    """A carousel's entries are numbered from 1; a single image or video is index 1. Text posts have none."""
-    carousel = post.get("carousel_media") or []
+def _own_items(media: JsonDict) -> list[Item]:
+    carousel = media.get("carousel_media") or []
     if carousel:
-        return [item for position, media in enumerate(carousel, 1) for item in items_from_media(media, position)]
+        return [item for position, entry in enumerate(carousel, 1) for item in items_from_media(entry, position)]
 
-    return items_from_media(post, 1)
+    return items_from_media(media, 1)
+
+
+def items_from_post(post: JsonDict) -> list[Item]:
+    """A carousel's entries are numbered from 1; a single image or video is index 1. Text posts have none.
+
+    INFO: A post that shares an Instagram post (``media_type`` 19, no media of its own) shows that
+    post's photos and videos inline; they sit in ``text_post_app_info.linked_inline_media``.
+    """
+    items = _own_items(post)
+    if items:
+        return items
+
+    linked = (post.get("text_post_app_info") or {}).get("linked_inline_media")
+    return _own_items(linked) if isinstance(linked, dict) else []
 
 
 def post_from_page(html: str, url: str, platform: str = "threads") -> Post:

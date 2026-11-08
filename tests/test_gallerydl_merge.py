@@ -248,7 +248,7 @@ def test_merged_video_keeps_formats_and_gains_the_direct_file(ytdlp_without_imag
 
 
 def test_images_only_need_one_provider(offline_providers) -> None:
-    post = extract(POST_URL, want=["images"])
+    post = extract(POST_URL, media_types=["images"])
 
     assert [item.media_type for item in post.items] == ["image", "image"]
     assert offline_providers == ["yt-dlp"]

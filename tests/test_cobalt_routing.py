@@ -252,7 +252,7 @@ def test_cli_with_a_routes_file_and_cobalt_url(tmp_path, capsysbinary, cobalt_se
 
 def test_without_an_instance_cobalt_is_skipped(ytdlp_calls) -> None:
     with pytest.raises(ExtractionError, match="no provider can handle tiktok"):
-        extract(TIKTOK_URL, want=["video"], routes={"disable": {"tiktok": ["yt-dlp"]}})
+        extract(TIKTOK_URL, media_types=["video"], routes={"disable": {"tiktok": ["yt-dlp"]}})
 
 
 def test_cli_rejects_a_bad_routes_file(tmp_path, capsys) -> None:
@@ -289,6 +289,6 @@ def test_cobalt_copy_is_dropped_when_another_provider_has_the_media_type() -> No
 def test_live_cobalt_serves_video_with_yt_dlp_turned_off() -> None:
     url = os.environ["CONTENT_DL_COBALT_TEST_URL"]
     platform = detect_platform(url)
-    result = extract(url, want=["video"], routes={"disable": {platform: ["yt-dlp"]}})
+    result = extract(url, media_types=["video"], routes={"disable": {platform: ["yt-dlp"]}})
 
     assert any(item.media_type == "video" and item.provider == "cobalt" and item.url for item in result.items)

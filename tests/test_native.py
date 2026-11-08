@@ -123,9 +123,9 @@ def test_threads_post_uploader_is_filled() -> None:
 
     assert (uploader.id, uploader.username, uploader.name) == ("123456", "someone", "Some One")
     assert uploader.url == "https://www.threads.com/@someone"
-    # A post page only has the small avatar, whose size the page doesn't say.
+    # A post page only has the small avatar; its size comes from the URL's s150x150 resize step.
     assert uploader.avatar.url.startswith("https://scontent.cdninstagram.com/v/t51.82787-19/av_n.jpg?stp=dst-jpg_s150x150")
-    assert (uploader.avatar.width, uploader.avatar.height) == (None, None)
+    assert (uploader.avatar.width, uploader.avatar.height) == (150, 150)
 
 
 def test_threads_picks_the_post_by_its_code() -> None:
@@ -153,6 +153,27 @@ def test_threads_profile_has_the_largest_hd_avatar() -> None:
     assert (profile.id, profile.username, profile.name) == ("123456", "someone", "Some One")
     assert (profile.avatar.width, profile.avatar.height, profile.avatar.ext) == (640, 640, "jpg")
     assert profile.items == []
+
+
+def test_threads_post_sharing_an_instagram_post_uses_its_media() -> None:
+    image = {"image_versions2": {"candidates": [{"url": "https://cdn.example/a.jpg", "width": 2000, "height": 2666}]}}
+    post = {
+        "media_type": 19,
+        "image_versions2": {"candidates": []},
+        "text_post_app_info": {"linked_inline_media": {"media_type": 8, "carousel_media": [image, image]}},
+    }
+
+    items = threads.items_from_post(post)
+
+    assert [(item.index, item.media_type, item.width) for item in items] == [(1, "image", 2000), (2, "image", 2000)]
+
+
+def test_threads_share_link_resolves_to_the_clean_post_url(monkeypatch) -> None:
+    target = "https://www.threads.com/@someone/post/DfaNgswkQPG"
+    monkeypatch.setattr(http, "get", lambda url, **kwargs: http.Response(200, f"{target}?xmt=abc&slof=1", ""))
+
+    assert NativeProvider().resolve_threads_url("https://www.threads.com/share/BALHonL4O-") == target
+    assert NativeProvider().resolve_threads_url(target) == target
 
 
 def test_threads_rejects_other_urls() -> None:
@@ -251,10 +272,24 @@ def test_threads_carousel_returns_a_complete_post(threads_pages) -> None:
     assert isinstance(post, Post)
     assert (post.id, post.description, post.upload_date) == ("DThr3adsAbc", "sunset at the beach", "2026-10-30T18:22:00Z")
     assert (post.uploader.username, post.uploader.name) == ("someone", "Some One")
-    assert post.uploader.avatar is not None
+    # The post page only has the 150px avatar, so the uploader's profile page supplies the HD one.
+    assert (post.uploader.avatar.width, post.uploader.avatar.height) == (640, 640)
     assert [(item.index, item.media_type) for item in post.items] == [(1, "image"), (2, "image"), (3, "video"), (3, "thumbnail")]
-    # Every Threads column is native, so the page is fetched once.
-    assert threads_pages == [THREADS_POST_URL]
+    # Every Threads column is native, so each page is fetched once.
+    assert threads_pages == [THREADS_POST_URL, "https://www.threads.com/@someone"]
+
+
+def test_threads_post_keeps_the_small_avatar_when_the_profile_fails(monkeypatch) -> None:
+    def fetch(self, url, domain, headers=None):
+        if threads.parse_url(url)[0] == "profile":
+            raise ProviderError("native: threads.com answered HTTP 429")
+
+        return read_fixture("threads_carousel.html")
+
+    monkeypatch.setattr(NativeProvider, "fetch_page", fetch)
+    post = extract(THREADS_POST_URL)
+
+    assert (post.uploader.avatar.width, post.uploader.avatar.height) == (150, 150)
 
 
 def test_threads_profile_url_returns_a_profile(threads_pages) -> None:
@@ -264,11 +299,13 @@ def test_threads_profile_url_returns_a_profile(threads_pages) -> None:
     assert (profile.username, profile.avatar.width) == ("someone", 640)
 
 
-def test_threads_want_filters_items(threads_pages) -> None:
-    post = extract(THREADS_POST_URL, want=["video"])
+def test_threads_media_types_filter_items(threads_pages) -> None:
+    post = extract(THREADS_POST_URL, media_types=["video"])
 
     assert [item.media_type for item in post.items] == ["video"]
     assert post.uploader.avatar is None
+    # Without the avatar requested, the profile page isn't fetched.
+    assert threads_pages == [THREADS_POST_URL]
 
 
 def test_threads_failure_is_an_extraction_error(monkeypatch) -> None:
@@ -312,8 +349,8 @@ def test_instagram_post_gets_the_uploader_avatar_from_native(instagram_post_prov
     assert {item.provider for item in post.items} == {"yt-dlp"}
 
 
-def test_instagram_post_skips_the_avatar_lookup_when_not_wanted(instagram_post_providers) -> None:
-    post = extract(INSTAGRAM_POST_URL, want=["images"])
+def test_instagram_post_skips_the_avatar_lookup_when_not_requested(instagram_post_providers) -> None:
+    post = extract(INSTAGRAM_POST_URL, media_types=["images"])
 
     assert post.uploader.avatar is None
     assert instagram_post_providers == []

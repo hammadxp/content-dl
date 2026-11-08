@@ -179,12 +179,12 @@ def sort_items(items: Sequence[Item]) -> list[Item]:
 def merge(
     results: Mapping[str, Result],
     routes: Mapping[str, Sequence[str]],
-    want: Sequence[MediaType] | None = None,
+    media_types: Sequence[MediaType] | None = None,
 ) -> Result:
     """Combine provider results into one.
 
     ``results`` maps provider name to its result, in the order the providers ran. ``routes`` is
-    the platform's row of the routing table. ``want`` limits the merged items to some media types.
+    the platform's row of the routing table. ``media_types`` limits the merged items to some media types.
 
     The highest-priority metadata provider decides whether the result is a Post or a Profile;
     results of the other type are left out, since their fields describe something else.
@@ -200,15 +200,17 @@ def merge(
     same_type = {name: result for name, result in results.items() if type(result) is type(lead)}
     meta = [same_type[name] for name in meta_order if name in same_type]
 
-    media_types = [
-        media_type for media_type in MEDIA_TYPE_ORDER if media_type != "avatar" and (want is None or media_type in want)
+    item_types = [
+        media_type
+        for media_type in MEDIA_TYPE_ORDER
+        if media_type != "avatar" and (media_types is None or media_type in media_types)
     ]
     items = sort_items(
         drop_repeated_thumbnails(
-            [item for media_type in media_types for item in _merge_media_type(media_type, routes, same_type)]
+            [item for media_type in item_types for item in _merge_media_type(media_type, routes, same_type)]
         )
     )
-    avatar = _merge_avatar(routes, same_type) if want is None or "avatar" in want else None
+    avatar = _merge_avatar(routes, same_type) if media_types is None or "avatar" in media_types else None
 
     if isinstance(lead, Profile):
         return _merge_profile(platform, meta, avatar, items)  # type: ignore[return-value]

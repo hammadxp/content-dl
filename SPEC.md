@@ -144,8 +144,8 @@ The router maps a URL to a platform, then looks up which providers to try for ea
 
 **What each provider is good at**
 
-- **yt-dlp:** video and audio streams with every format, and uniform metadata (`id`, `title`, `uploader`, `timestamp`, `extractor_key`). On YouTube it also gives the channel avatar: a channel URL returns a Profile with its avatar, and a video costs one extra channel-page request to fill the uploader's avatar (skipped when avatars aren't wanted). Playlist URLs aren't supported. On Instagram it reads public posts logged out, from the JSON embedded in the post page or, when `curl_cffi` is installed, from the logged-out GraphQL query the website uses, which is why it leads Instagram's images and metadata. A carousel comes back with every image and video.
-- **gallery-dl:** images and carousels, single posts or whole collections. Metadata field names differ per site, so its adapter has a small mapper per platform. On Instagram it only uses the app API, which redirects to the login page without a session, so there it is a fallback logged out and the lead logged in. With cookies, a post costs one extra request for the uploader's avatar (skipped when avatars aren't wanted).
+- **yt-dlp:** video and audio streams with every format, and uniform metadata (`id`, `title`, `uploader`, `timestamp`, `extractor_key`). On YouTube it also gives the channel avatar: a channel URL returns a Profile with its avatar, and a video costs one extra channel-page request to fill the uploader's avatar (skipped when avatars aren't requested). Playlist URLs aren't supported. On Instagram it reads public posts logged out, from the JSON embedded in the post page or, when `curl_cffi` is installed, from the logged-out GraphQL query the website uses, which is why it leads Instagram's images and metadata. A carousel comes back with every image and video.
+- **gallery-dl:** images and carousels, single posts or whole collections. Metadata field names differ per site, so its adapter has a small mapper per platform. On Instagram it only uses the app API, which redirects to the login page without a session, so there it is a fallback logged out and the lead logged in. With cookies, a post costs one extra request for the uploader's avatar (skipped when avatars aren't requested).
 - **cobalt:** a working media URL when the others fail. It returns almost no metadata, so it is never the metadata source. It runs only as a remote server, on a datacenter IP that Instagram rate-limits sooner, so it is always a fallback.
 - **native:** our own code. Threads posts and profiles (JSON embedded in the page), Facebook posts (JSON embedded in the logged-in post page), Instagram profile pictures logged out (`web_profile_info`, which Instagram often refuses), Pinterest profiles and pin uploaders (`UserResource`), Reddit posts from the logged-out embed page and profile icons from `about.json`, and the generic fallback (`og:image` and `og:video` tags). On an Instagram post URL, which doesn't contain the username, it reads the uploader's username from what the metadata providers returned and adds only the avatar. Threads embeds the post JSON only for browser-like clients, so native requests go through `curl_cffi` when it is installed, falling back to `requests`.
 
@@ -177,7 +177,7 @@ The CLI's flags are content-dl's own and spelled out, so they aren't mistaken fo
 - `GET /extract?url=<url>&media_types=<media types>` returns the result JSON.
 - `GET /download?url=<url>&item=<index>&media_type=<media type>` streams one item's file.
 
-The Python API is the same thing without the process: `content_dl.extract(url, want=[...])` returns the result object, and `extract(url, cookies=Cookies(file="cookies.txt"))` passes cookies.
+The Python API is the same thing without the process: `content_dl.extract(url, media_types=[...])` returns the result object, and `extract(url, cookies=Cookies(file="cookies.txt"))` passes cookies.
 
 ## Android and the Seal fork
 

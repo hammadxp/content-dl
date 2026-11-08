@@ -67,7 +67,7 @@ KNOWN_PROVIDERS = frozenset({"yt-dlp", "gallery-dl", "cobalt", "native", "generi
 ROUTES_ENV = "CONTENT_DL_ROUTES"
 ALL_PLATFORMS = "*"
 
-# Media type -> routing column, in the table's column order (used when every media type is wanted).
+# Media type -> routing column, in the table's column order (used when every media type is requested).
 MEDIA_TYPE_COLUMNS: dict[str, str] = {
     "video": "video",
     "audio": "video",
@@ -269,26 +269,26 @@ def routes_for(platform: str, with_cookies: bool = False, config: RoutingConfig 
     return (config or default_config()).routes_for(platform, with_cookies)
 
 
-def columns_for(want: list[MediaType] | None = None) -> list[str]:
+def columns_for(media_types: list[MediaType] | None = None) -> list[str]:
     """Return the routing columns to fill, metadata first, without duplicates.
 
     >>> columns_for(["audio", "video", "avatar"])
     ['metadata', 'video', 'avatar']
     """
-    media_types = want if want is not None else MEDIA_TYPE_COLUMNS
-    return list(dict.fromkeys(["metadata", *(MEDIA_TYPE_COLUMNS[media_type] for media_type in media_types)]))
+    chosen = media_types if media_types is not None else MEDIA_TYPE_COLUMNS
+    return list(dict.fromkeys(["metadata", *(MEDIA_TYPE_COLUMNS[media_type] for media_type in chosen)]))
 
 
 def providers_for(
     platform: str,
-    want: list[MediaType] | None = None,
+    media_types: list[MediaType] | None = None,
     with_cookies: bool = False,
     config: RoutingConfig | None = None,
 ) -> list[str]:
     """Return the providers to try for a platform, in priority order, without duplicates.
 
     Metadata providers come first because they decide the Post's fields; the providers for
-    each wanted media type follow. ``want=None`` means every media type. A platform without its own row
+    each requested media type follow. ``media_types=None`` means every media type. A platform without its own row
     (an unknown site's domain) uses the unknown-site row.
 
     >>> providers_for("x", ["video"])
@@ -296,7 +296,7 @@ def providers_for(
     """
     routes = routes_for(platform, with_cookies, config)
     ordered: list[str] = []
-    for column in columns_for(want):
+    for column in columns_for(media_types):
         for provider in routes.get(column, []):
             if provider not in ordered:
                 ordered.append(provider)

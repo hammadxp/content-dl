@@ -1,6 +1,6 @@
 """native provider: content-dl's own extractors, for the gaps no wrapped tool covers.
 
-- Threads posts and profiles, from the JSON embedded in the page.
+- Threads posts and profiles, from the JSON embedded in the page, and share links resolved.
 - Instagram profile pictures, from ``web_profile_info``.
 - Facebook posts (author, text, date, photos), from the JSON a logged-in post page embeds.
 - Pinterest profiles and avatars, from the web app's ``UserResource``, and pin.it links resolved.
@@ -187,7 +187,7 @@ class NativeProvider:
 
         return reddit.profile_from_about(response.text, kind, name, platform)
 
-    def extract_reddit(self, url: str, platform: str, want: list[str] | None) -> Result:
+    def extract_reddit(self, url: str, platform: str, media_types: list[str] | None) -> Result:
         kind, name, post_id = reddit.parse_url(url)
         if kind in ("profile", "community") and name:
             return self.reddit_profile(kind, name, platform)
@@ -201,7 +201,7 @@ class NativeProvider:
         video_items = self.reddit_video_items(player) if player else None
         post = reddit.post_from_embed(page, url, platform, video_items)
         uploader = post.uploader
-        if self.cookies and (want is None or "avatar" in want) and uploader and uploader.username:
+        if self.cookies and (media_types is None or "avatar" in media_types) and uploader and uploader.username:
             # INFO: Only with cookies: logged out, about.json is blocked and the lookup would only cost a request.
             try:
                 uploader.avatar = self.reddit_profile("profile", uploader.username, platform).avatar
@@ -231,13 +231,46 @@ class NativeProvider:
 
         return snapchat.post_from_page(page, url, platform)
 
-    def extract_threads(self, url: str, platform: str) -> Result:
+    def resolve_threads_url(self, url: str) -> str:
+        """The post page a Threads share link opens, minus its share parameters. On a network error it's kept."""
+        if not threads.is_share_url(url):
+            return url
+
+        try:
+            response = http.get(url, cookies=self.site_cookies("threads.com"))
+        except ProviderError:
+            return url
+
+        if response.status != 200 or threads.is_share_url(response.url):
+            return url
+
+        return threads.clean_url(response.url)
+
+    def threads_hd_avatar(self, username: str, platform: str) -> Item | None:
+        """The uploader's HD avatar from their profile page, or None when the page can't be read."""
+        profile_url = f"{threads.ROOT}/@{username}"
+        try:
+            return threads.profile_from_page(self.fetch_page(profile_url, "threads.com"), profile_url, platform).avatar
+        except ProviderError:
+            return None
+
+    def extract_threads(self, url: str, platform: str, media_types: list[str] | None) -> Result:
         kind, _, _ = threads.parse_url(url)
         html = self.fetch_page(url, "threads.com")
         if kind == "profile":
             return threads.profile_from_page(html, url, platform)
 
-        return threads.post_from_page(html, url, platform)
+        post = threads.post_from_page(html, url, platform)
+        uploader = post.uploader
+        # INFO: A post page only carries the 150px avatar, and its CDN URL is signed, so a larger
+        # size can't be asked for by editing it. The profile page lists the HD versions.
+        if (media_types is None or "avatar" in media_types) and uploader and uploader.username and uploader.avatar:
+            small = uploader.avatar
+            hd = self.threads_hd_avatar(uploader.username, platform)
+            if hd and (hd.width or 0) > (small.width or 0):
+                uploader.avatar = hd
+
+        return post
 
     def extract_instagram(self, url: str, platform: str, known: Mapping[str, Result] | None) -> Result:
         _, username = instagram.parse_url(url)
@@ -249,10 +282,10 @@ class NativeProvider:
         return instagram.result_for(url, platform, profile)
 
     def extract(
-        self, url: str, platform: str, want: list[str] | None = None, known: Mapping[str, Result] | None = None
+        self, url: str, platform: str, media_types: list[str] | None = None, known: Mapping[str, Result] | None = None
     ) -> Result:
         if platform == "threads":
-            return self.extract_threads(url, platform)
+            return self.extract_threads(url, platform, media_types)
 
         if platform == "instagram":
             return self.extract_instagram(url, platform, known)
@@ -267,7 +300,7 @@ class NativeProvider:
             return self.extract_pinterest(url, platform, known)
 
         if platform == "reddit":
-            return self.extract_reddit(url, platform, want)
+            return self.extract_reddit(url, platform, media_types)
 
         if platform == "snapchat":
             return self.extract_snapchat(url, platform)

@@ -65,11 +65,11 @@ class Provider(Protocol):
     platforms: frozenset[str] | None
 
     def extract(
-        self, url: str, platform: str, want: list[str] | None = None, known: Mapping[str, Result] | None = None
+        self, url: str, platform: str, media_types: list[str] | None = None, known: Mapping[str, Result] | None = None
     ) -> Result:
         """Return everything the provider can find at ``url``, in content-dl's format.
 
-        ``platform`` comes from the router and is copied into the result as-is. ``want`` lists
+        ``platform`` comes from the router and is copied into the result as-is. ``media_types`` lists
         the media types asked for (``None`` means all), so a provider can skip extra requests.
         ``known`` holds what the providers that ran earlier returned, by provider name, so a
         provider can build on it (the native Instagram avatar lookup needs the uploader's

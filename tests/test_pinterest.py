@@ -128,7 +128,7 @@ def test_image_pin_is_an_image_with_its_uploader(site, tools) -> None:
 
 
 def test_pin_without_the_avatar_column_skips_the_profile_lookup(site, tools) -> None:
-    extract("https://www.pinterest.com/pin/894/", want=["image"])
+    extract("https://www.pinterest.com/pin/894/", media_types=["image"])
     assert not any("UserResource" in url for url in site["calls"])
 
 

@@ -440,7 +440,7 @@ class GalleryDlProvider:
         messages = self.fetch_messages(f"https://www.instagram.com/{username}/avatar/")
         return instagram_profile_from_messages(messages, platform, username)
 
-    def facebook_post(self, platform: str, known: Mapping[str, Result] | None, wants_avatar: bool) -> Post:
+    def facebook_post(self, platform: str, known: Mapping[str, Result] | None, avatar_requested: bool) -> Post:
         """Full-size copies of a Facebook post's photos, from the photo pages native found.
 
         INFO: gallery-dl has no Facebook post extractor (and its profile pattern would take
@@ -469,7 +469,7 @@ class GalleryDlProvider:
 
         uploader = None
         native_uploader = native.uploader if isinstance(native, Post) else None
-        if wants_avatar and native_uploader and native_uploader.id:
+        if avatar_requested and native_uploader and native_uploader.id:
             try:
                 messages = self.fetch_messages(f"https://www.facebook.com/{native_uploader.id}/avatar")
                 uploader = facebook_profile_from_messages(messages, platform, native_uploader.url or "")
@@ -479,9 +479,9 @@ class GalleryDlProvider:
         return Post(platform=platform, items=items, uploader=uploader)
 
     def extract(
-        self, url: str, platform: str, want: list[str] | None = None, known: Mapping[str, Result] | None = None
+        self, url: str, platform: str, media_types: list[str] | None = None, known: Mapping[str, Result] | None = None
     ) -> Result:
-        wants_avatar = want is None or "avatar" in want
+        avatar_requested = media_types is None or "avatar" in media_types
         if platform == "facebook" and (profile := facebook_url.profile_id(url)):
             # INFO: gallery-dl's profile extractor queues a whole photo feed; the avatar extractor
             # returns just the profile picture, which is what a profile URL means in content-dl.
@@ -489,7 +489,7 @@ class GalleryDlProvider:
             return facebook_profile_from_messages(messages, platform, url)
 
         if platform == "facebook" and facebook_url.is_post_url(url):
-            return self.facebook_post(platform, known, wants_avatar)
+            return self.facebook_post(platform, known, avatar_requested)
 
         if platform == "instagram" and self.cookies:
             try:
@@ -502,7 +502,7 @@ class GalleryDlProvider:
 
         post = result_from_messages(self.fetch_messages(url), platform)
         uploader = post.uploader
-        if platform == "instagram" and self.cookies and wants_avatar and uploader and uploader.username:
+        if platform == "instagram" and self.cookies and avatar_requested and uploader and uploader.username:
             try:
                 uploader.avatar = self.instagram_profile(uploader.username, platform).avatar
             except ProviderError:

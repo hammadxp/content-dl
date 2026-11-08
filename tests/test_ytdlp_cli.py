@@ -194,8 +194,8 @@ def test_extract_returns_a_post_with_the_uploader_avatar(offline_ytdlp) -> None:
     assert offline_ytdlp == [VIDEO_URL, CHANNEL_URL]
 
 
-def test_extract_skips_the_avatar_request_when_not_wanted(offline_ytdlp) -> None:
-    result = extract(VIDEO_URL, want=["video"])
+def test_extract_skips_the_avatar_request_when_not_requested(offline_ytdlp) -> None:
+    result = extract(VIDEO_URL, media_types=["video"])
 
     assert result.uploader.avatar is None
     assert offline_ytdlp == [VIDEO_URL]
@@ -220,8 +220,8 @@ def test_extract_returns_a_profile_for_a_channel_url(offline_ytdlp) -> None:
     assert offline_ytdlp == [CHANNEL_URL]
 
 
-def test_extract_keeps_only_wanted_media_types(offline_ytdlp) -> None:
-    result = extract(VIDEO_URL, want=["thumbnails"])
+def test_extract_keeps_only_requested_media_types(offline_ytdlp) -> None:
+    result = extract(VIDEO_URL, media_types=["thumbnails"])
 
     assert [item.media_type for item in result.items] == ["thumbnail"]
     assert result.title == "Me at the zoo"
@@ -229,7 +229,7 @@ def test_extract_keeps_only_wanted_media_types(offline_ytdlp) -> None:
 
 def test_extract_rejects_unknown_media_types(offline_ytdlp) -> None:
     with pytest.raises(ValueError, match="unknown media type"):
-        extract(VIDEO_URL, want=["gifs"])
+        extract(VIDEO_URL, media_types=["gifs"])
 
 
 def test_extract_reports_provider_errors(monkeypatch) -> None:

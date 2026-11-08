@@ -18,7 +18,7 @@ from collections.abc import Sequence
 
 from content_dl import __version__
 from content_dl.download import Download, ItemPick, download, media_types_to_extract, parse_item_picks, parse_max_quality
-from content_dl.extract import ExtractionError, extract, normalise_want
+from content_dl.extract import ExtractionError, extract, normalise_media_types
 from content_dl.providers.base import Cookies
 from content_dl.providers.cobalt import API_KEY_ENV, URL_ENV, CobaltInstance
 from content_dl.providers.ytdlp import FFMPEG_LOCATION_ENV, JS_RUNTIMES_ENV
@@ -263,7 +263,7 @@ def _report(outcome: Download) -> None:
         print(f"content-dl: warning: {label}: {outcome.warning}", file=sys.stderr)
 
 
-def _requested_but_missing(result: Result, want: list[str] | None, picks: list[ItemPick] | None) -> list[str]:
+def _requested_but_missing(result: Result, media_types: list[str] | None, picks: list[ItemPick] | None) -> list[str]:
     """Labels of the media types or items asked for that the result doesn't have, such as "avatar"."""
     items = _all_items(result)
     if picks:
@@ -273,16 +273,16 @@ def _requested_but_missing(result: Result, want: list[str] | None, picks: list[I
             if not any(item.media_type == media_type and (index is None or item.index == index) for item in items)
         ]
 
-    if want:
+    if media_types:
         found = {item.media_type for item in items}
-        return [media_type for media_type in want if media_type not in found]
+        return [media_type for media_type in media_types if media_type not in found]
 
     return []
 
 
 def missing_message(
     result: Result,
-    want: list[str] | None,
+    media_types: list[str] | None,
     picks: list[ItemPick] | None,
     has_cookies: bool,
     nothing_saved: bool,
@@ -300,8 +300,8 @@ def missing_message(
     >>> missing_message(post, ["image"], None, has_cookies=False, nothing_saved=False) is None
     True
     """
-    missing = _requested_but_missing(result, want, picks)
-    if not missing and nothing_saved and not (want or picks):
+    missing = _requested_but_missing(result, media_types, picks)
+    if not missing and nothing_saved and not (media_types or picks):
         # The defaults pick videos and images (or a profile's avatar), so none of those was found.
         missing = ["avatar"] if hasattr(result, "avatar") else ["video or image"]
 
@@ -342,11 +342,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     try:
-        want = normalise_want(args.media_types.split(",")) if args.media_types else None
+        media_types = normalise_media_types(args.media_types.split(",")) if args.media_types else None
         picks = parse_item_picks(args.items) if args.items else None
         max_quality = parse_max_quality(args.max_quality) if args.max_quality else None
         cookies = Cookies(file=args.cookies, browser=args.cookies_from_browser)
-        extract_want = media_types_to_extract(want) if downloading else want
+        extract_media_types = media_types_to_extract(media_types) if downloading else media_types
         cobalt = CobaltInstance.from_env()
         if args.cobalt_url or args.cobalt_api_key:
             url = args.cobalt_url or (cobalt.url if cobalt else None)
@@ -360,7 +360,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             result = extract(
                 args.url,
-                want=extract_want,
+                media_types=extract_media_types,
                 provider=args.provider,
                 cookies=cookies or None,
                 routes=args.routes,
@@ -380,7 +380,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     outcomes = download(
         result,
-        want=want,
+        media_types=media_types,
         output=args.filename_template,
         format=args.ytdlp_format,
         max_quality=max_quality,
@@ -390,7 +390,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         picks=picks,
     )
 
-    missing = missing_message(result, want, picks, has_cookies=bool(cookies), nothing_saved=not outcomes)
+    missing = missing_message(result, media_types, picks, has_cookies=bool(cookies), nothing_saved=not outcomes)
     if not outcomes:
         print(f"content-dl: error: {missing or 'nothing to download'}", file=sys.stderr)
         return 1

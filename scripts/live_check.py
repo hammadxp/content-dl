@@ -83,7 +83,7 @@ def run_case(case: dict, cookies: Cookies | None, verbose: bool) -> Outcome:
 
     started = time.monotonic()
     try:
-        result = extract(case["url"], want=case.get("want"), cookies=cookies)
+        result = extract(case["url"], media_types=case.get("media_types"), cookies=cookies)
     except Exception as error:  # every failure is a result here, not a crash
         if verbose:
             traceback.print_exc()

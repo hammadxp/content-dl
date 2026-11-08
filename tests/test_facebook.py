@@ -214,6 +214,6 @@ def test_reduced_copy_stands_in_when_the_photo_page_fails(post_providers, monkey
         raise ProviderError("gallery-dl: AuthRequired: You must be logged in")
 
     monkeypatch.setattr(GalleryDlProvider, "fetch_messages", no_photo_pages)
-    [image] = extract(POST_URL, want=["image"]).items
+    [image] = extract(POST_URL, media_types=["image"]).items
 
     assert (image.provider, image.width) == ("native", 526)

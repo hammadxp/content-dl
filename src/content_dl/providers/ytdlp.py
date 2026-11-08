@@ -515,7 +515,7 @@ class YtDlpProvider:
             return None
 
     def extract(
-        self, url: str, platform: str, want: list[str] | None = None, known: Mapping[str, Result] | None = None
+        self, url: str, platform: str, media_types: list[str] | None = None, known: Mapping[str, Result] | None = None
     ) -> Post | Profile:
         # INFO: Only the first entry of a YouTube channel page is listed, keeping a profile lookup
         # to one page request. Elsewhere a playlist can be a carousel, whose entries all count.
@@ -531,9 +531,9 @@ class YtDlpProvider:
         # INFO: A video page doesn't include the uploader's avatar, so it costs one more request
         # (about a second). Skipped when the caller didn't ask for avatars, and on other platforms,
         # whose yt-dlp extractors don't label an avatar on the profile page.
-        wants_avatar = want is None or "avatar" in want
+        avatar_requested = media_types is None or "avatar" in media_types
         uploader = result.uploader if isinstance(result, Post) else None
-        if platform == "youtube" and wants_avatar and uploader and uploader.url and uploader.avatar is None:
+        if platform == "youtube" and avatar_requested and uploader and uploader.url and uploader.avatar is None:
             uploader.avatar = self.fetch_avatar(uploader.url)
 
         return result
