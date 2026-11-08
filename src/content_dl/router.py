@@ -23,6 +23,9 @@ Why the defaults are ordered as they are:
 - Instagram with cookies: gallery-dl's app API works and returns more than yt-dlp's logged-out
   route (image sizes, full owner data), so it leads images and metadata again. yt-dlp stays
   first for video, where its format list is what matters.
+- Reddit: native leads because the public embed page is the only logged-out source left; Reddit
+  blocks yt-dlp's and gallery-dl's requests without a session (Nov 8, 2026). They're listed only
+  in the cookie row, where they can stand in if the embed page changes.
 - cobalt returns almost no metadata and runs on a datacenter IP, so it is always a fallback.
 
 Providers that aren't built (generic), native on platforms it has no extractor for

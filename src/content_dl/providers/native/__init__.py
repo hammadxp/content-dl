@@ -4,6 +4,8 @@
 - Instagram profile pictures, from ``web_profile_info``.
 - Facebook posts (author, text, date, photos), from the JSON a logged-in post page embeds.
 - Pinterest profiles and avatars, from the web app's ``UserResource``, and pin.it links resolved.
+- Reddit posts from the public embed page (logged out), profile and community icons from
+  ``about.json``, and share links resolved.
 
 The routing table also lists ``native`` for Snapchat metadata, and the unknown-site row lists
 ``generic`` (og: tags); neither is built yet, so ``platforms`` leaves Snapchat out and
@@ -16,15 +18,15 @@ from collections.abc import Mapping
 from typing import Any
 
 from content_dl.providers.base import Cookies, NeedsKnownError, ProviderError
-from content_dl.providers.native import facebook, http, instagram, pinterest, threads
-from content_dl.schema import Post, Result
+from content_dl.providers.native import facebook, http, instagram, pinterest, reddit, threads
+from content_dl.schema import Item, Post, Profile, Result
 
 NAME = "native"
 
 
 class NativeProvider:
     name = NAME
-    platforms = frozenset({"threads", "instagram", "facebook", "pinterest"})
+    platforms = frozenset({"threads", "instagram", "facebook", "pinterest", "reddit"})
 
     def __init__(self, cookies: Cookies | None = None) -> None:
         self.cookies = cookies
@@ -139,6 +141,76 @@ class NativeProvider:
         profile = pinterest.profile_from_user(user, platform, self.pinterest_avatar_url(user))
         return profile if kind == "profile" else Post(platform=platform, uploader=profile)
 
+    def resolve_reddit_url(self, url: str) -> str:
+        """The page a Reddit share link opens, without its share parameters. On a network error the link is kept."""
+        if not reddit.is_share_url(url):
+            return url
+
+        try:
+            response = http.get(url, cookies=self.site_cookies("reddit.com"))
+        except ProviderError:
+            return url
+
+        return reddit.clean_url(response.url) if response.url != url else url
+
+    def reddit_video_items(self, player: dict[str, str]) -> list[Item]:
+        """The video and audio streams in a Reddit player's HLS playlist, read by yt-dlp's generic extractor."""
+        # INFO: Imported here so the provider modules don't import each other at load time.
+        from content_dl.providers.ytdlp import YtDlpProvider, items_from_info
+
+        source = player.get("src")
+        if not source:
+            return []
+
+        try:
+            info = YtDlpProvider(cookies=self.cookies).fetch_info(source)
+        except ProviderError:
+            return []  # The poster still stands in; yt-dlp and cobalt can still try the video.
+
+        items = [item for item in items_from_info(info) if item.media_type in ("video", "audio")]
+        for item in items:
+            item.provider = NAME
+
+        return items
+
+    def reddit_profile(self, kind: str, name: str, platform: str) -> Profile:
+        """A user's or community's icon. Reddit blocks this lookup logged out, so it needs cookies."""
+        response = http.get(reddit.about_url(kind, name), cookies=self.site_cookies("reddit.com"))
+        if response.status in (403, 429) or reddit.is_blocked_page(response.text):
+            hint = "check the cookies are still signed in" if self.cookies else "pass --cookies or --cookies-from-browser"
+            raise ProviderError(f"native: Reddit blocks logged-out profile lookups; {hint}")
+
+        if response.status == 404:
+            raise ProviderError(f"native: Reddit has no such {'user' if kind == 'profile' else 'community'}")
+
+        if response.status != 200:
+            raise ProviderError(f"native: Reddit answered the profile lookup with HTTP {response.status}")
+
+        return reddit.profile_from_about(response.text, kind, name, platform)
+
+    def extract_reddit(self, url: str, platform: str, want: list[str] | None) -> Result:
+        kind, name, post_id = reddit.parse_url(url)
+        if kind in ("profile", "community") and name:
+            return self.reddit_profile(kind, name, platform)
+
+        if not post_id:
+            raise ProviderError("native: this Reddit URL names no post")
+
+        # INFO: The embed page, unlike the post page and the JSON API, is served logged out.
+        page = self.fetch_page(reddit.embed_url(name, post_id), "embed.reddit.com")
+        player = reddit.player_attributes(page)
+        video_items = self.reddit_video_items(player) if player else None
+        post = reddit.post_from_embed(page, url, platform, video_items)
+        uploader = post.uploader
+        if self.cookies and (want is None or "avatar" in want) and uploader and uploader.username:
+            # INFO: Only with cookies: logged out, about.json is blocked and the lookup would only cost a request.
+            try:
+                uploader.avatar = self.reddit_profile("profile", uploader.username, platform).avatar
+            except ProviderError:
+                pass
+
+        return post
+
     def extract_threads(self, url: str, platform: str) -> Result:
         kind, _, _ = threads.parse_url(url)
         html = self.fetch_page(url, "threads.com")
@@ -173,6 +245,9 @@ class NativeProvider:
 
         if platform == "pinterest":
             return self.extract_pinterest(url, platform, known)
+
+        if platform == "reddit":
+            return self.extract_reddit(url, platform, want)
 
         raise ProviderError(f"native: no extractor for {platform}")
 

@@ -209,6 +209,18 @@ def _site_cookies(run: _Run, url: str) -> dict[str, str]:
     return http.cookies_for(run.jar, ".".join(host.split(".")[-2:]))
 
 
+# INFO: What a browser sends when it loads the file into a page rather than navigating to it. Some
+# hosts answer a navigation-style request with an HTML viewer instead of the file: i.redd.it
+# redirects it to reddit.com/media, which is a bot-check page logged out.
+ACCEPT_BY_MEDIA_TYPE = {
+    "image": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+    "thumbnail": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+    "avatar": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+    "video": "video/*,*/*;q=0.8",
+    "audio": "audio/*,*/*;q=0.8",
+}
+
+
 def _save_file(run: _Run, result: Result, item: Item, owner: Owner) -> Download:
     assert item.url is not None
     context = template_context(result, item)
@@ -218,7 +230,11 @@ def _save_file(run: _Run, result: Result, item: Item, owner: Owner) -> Download:
         if path.exists():
             return Download(item=item, owner=owner, status="exists", path=path)
 
-    with http.stream(item.url, cookies=_site_cookies(run, item.url)) as response:
+    headers = {"Accept": ACCEPT_BY_MEDIA_TYPE[item.media_type]} if item.media_type in ACCEPT_BY_MEDIA_TYPE else None
+    with http.stream(item.url, headers=headers, cookies=_site_cookies(run, item.url)) as response:
+        if (response.content_type or "").split(";")[0].strip().lower() == "text/html":
+            raise ProviderError(f"{urlparse(item.url).hostname} answered with a web page instead of the file")
+
         if path is None:
             context["ext"] = _ext_from_type(response.content_type) or "bin"
             path = _unique(render(run.output, context), run.used)

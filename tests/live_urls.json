@@ -1,0 +1,334 @@
+{
+  "INFO": "Real URLs for scripts/live_check.py. 'want' is passed to extract() (null means the defaults), 'expect' is the least number of items per media type the result must hold, and 'cookies' marks a URL that only works logged in. A null 'url' is a case still missing a URL. 'cobalt' marks a URL only a cobalt instance (CONTENT_DL_COBALT_URL) can serve.",
+  "cases": [
+    {
+      "platform": "youtube",
+      "name": "avatar",
+      "url": "https://www.youtube.com/watch?v=riS89biXH7E",
+      "want": [
+        "avatar"
+      ],
+      "expect": {
+        "avatar": 1
+      }
+    },
+    {
+      "platform": "youtube",
+      "name": "video",
+      "url": "https://www.youtube.com/watch?v=riS89biXH7E&t=282s",
+      "want": [
+        "video"
+      ],
+      "expect": {
+        "video": 1
+      }
+    },
+    {
+      "platform": "youtube",
+      "name": "audio",
+      "url": "https://www.youtube.com/watch?v=riS89biXH7E",
+      "want": [
+        "audio"
+      ],
+      "expect": {
+        "audio": 1
+      }
+    },
+    {
+      "platform": "youtube",
+      "name": "thumbnail",
+      "url": "https://www.youtube.com/watch?v=riS89biXH7E",
+      "want": [
+        "thumbnail"
+      ],
+      "expect": {
+        "thumbnail": 1
+      }
+    },
+    {
+      "platform": "instagram",
+      "name": "avatar",
+      "url": "https://www.instagram.com/har00n_al1",
+      "want": [
+        "avatar"
+      ],
+      "expect": {
+        "avatar": 1
+      },
+      "cookies": true
+    },
+    {
+      "platform": "instagram",
+      "name": "post (single, with music)",
+      "url": "https://www.instagram.com/p/DOGtV0mErXD/",
+      "want": null,
+      "expect": {
+        "image": 1
+      },
+      "cookies": true,
+      "note": "Logged out, yt-dlp returns the photo only as a thumbnail and gallery-dl needs a login."
+    },
+    {
+      "platform": "instagram",
+      "name": "post (multiple)",
+      "url": "https://www.instagram.com/p/Ddq_cbyluPU/",
+      "want": null,
+      "expect": {
+        "any": 2
+      }
+    },
+    {
+      "platform": "instagram",
+      "name": "reel",
+      "url": "https://www.instagram.com/reels/DbNxAI_vwOr/",
+      "want": [
+        "video"
+      ],
+      "expect": {
+        "video": 1
+      }
+    },
+    {
+      "platform": "facebook",
+      "name": "avatar",
+      "url": "https://www.facebook.com/share/1DWmcVhBs5/",
+      "want": [
+        "avatar"
+      ],
+      "expect": {
+        "avatar": 1
+      },
+      "cookies": true
+    },
+    {
+      "platform": "facebook",
+      "name": "post (single)",
+      "url": "https://www.facebook.com/share/p/19ak87B4rz/",
+      "want": null,
+      "expect": {
+        "image": 1
+      },
+      "cookies": true
+    },
+    {
+      "platform": "facebook",
+      "name": "post (multiple)",
+      "url": null,
+      "want": null,
+      "expect": {
+        "image": 2
+      },
+      "cookies": true
+    },
+    {
+      "platform": "facebook",
+      "name": "reel",
+      "url": "https://www.facebook.com/share/v/1FQBgnqp1D/",
+      "want": [
+        "video"
+      ],
+      "expect": {
+        "video": 1
+      }
+    },
+    {
+      "platform": "threads",
+      "name": "avatar",
+      "url": "https://www.threads.com/@zuck",
+      "want": [
+        "avatar"
+      ],
+      "expect": {
+        "avatar": 1
+      }
+    },
+    {
+      "platform": "threads",
+      "name": "post (images)",
+      "url": "https://www.threads.com/@zuck/post/DfNR0zhEdWv",
+      "want": null,
+      "expect": {
+        "image": 2
+      }
+    },
+    {
+      "platform": "threads",
+      "name": "post (video and images)",
+      "url": "https://www.threads.com/@zuck/post/DfaNgswkQPG",
+      "want": null,
+      "expect": {
+        "video": 1,
+        "image": 1
+      }
+    },
+    {
+      "platform": "tiktok",
+      "name": "avatar",
+      "url": "https://www.tiktok.com/@hankgreen1/video/7047596209028074758",
+      "want": [
+        "avatar"
+      ],
+      "expect": {
+        "avatar": 1
+      }
+    },
+    {
+      "platform": "tiktok",
+      "name": "video",
+      "url": "https://www.tiktok.com/@hankgreen1/video/7047596209028074758",
+      "want": [
+        "video"
+      ],
+      "expect": {
+        "video": 1
+      }
+    },
+    {
+      "platform": "tiktok",
+      "name": "audio",
+      "url": "https://www.tiktok.com/@hankgreen1/video/7047596209028074758",
+      "want": [
+        "audio"
+      ],
+      "expect": {
+        "audio": 1
+      }
+    },
+    {
+      "platform": "tiktok",
+      "name": "photo carousel",
+      "url": "https://www.tiktok.com/@drillyty/photo/7636153929700576543",
+      "want": null,
+      "expect": {
+        "image": 2
+      }
+    },
+    {
+      "platform": "x",
+      "name": "avatar",
+      "url": "https://twitter.com/TheEllenShow/status/440322224407314432",
+      "want": [
+        "avatar"
+      ],
+      "expect": {
+        "avatar": 1
+      }
+    },
+    {
+      "platform": "x",
+      "name": "post (image)",
+      "url": "https://twitter.com/TheEllenShow/status/440322224407314432",
+      "want": null,
+      "expect": {
+        "image": 1
+      }
+    },
+    {
+      "platform": "x",
+      "name": "post (multiple)",
+      "url": null,
+      "want": null,
+      "expect": {
+        "image": 2
+      }
+    },
+    {
+      "platform": "x",
+      "name": "video",
+      "url": "https://twitter.com/captainamerica/status/719944021058060289",
+      "want": [
+        "video"
+      ],
+      "expect": {
+        "video": 1
+      }
+    },
+    {
+      "platform": "pinterest",
+      "name": "pin (image)",
+      "url": "https://www.pinterest.com/pin/441282463481903715/",
+      "want": null,
+      "expect": {
+        "image": 1
+      }
+    },
+    {
+      "platform": "pinterest",
+      "name": "pin (video)",
+      "url": "https://www.pinterest.com/pin/664281013778109217/",
+      "want": [
+        "video"
+      ],
+      "expect": {
+        "video": 1
+      }
+    },
+    {
+      "platform": "reddit",
+      "name": "avatar",
+      "url": "https://www.reddit.com/u/DelbaOliveira/s/8maL82rtT2",
+      "want": [
+        "avatar"
+      ],
+      "expect": {
+        "avatar": 1
+      },
+      "cookies": true,
+      "note": "Share link to a profile; about.json is blocked logged out (Nov 8, 2026)."
+    },
+    {
+      "platform": "reddit",
+      "name": "community icon",
+      "url": "https://www.reddit.com/r/duolingo/s/Eq8XEfAW5C",
+      "want": [
+        "avatar"
+      ],
+      "expect": {
+        "avatar": 1
+      },
+      "cookies": true
+    },
+    {
+      "platform": "reddit",
+      "name": "post (image)",
+      "url": "https://www.reddit.com/r/duolingo/s/5Cvq3YFWxS",
+      "want": null,
+      "expect": {
+        "image": 1
+      }
+    },
+    {
+      "platform": "reddit",
+      "name": "post (gallery)",
+      "url": "https://www.reddit.com/r/ApplePhotos/s/LFh9KV4XZ9",
+      "want": null,
+      "expect": {
+        "image": 2
+      }
+    },
+    {
+      "platform": "reddit",
+      "name": "video",
+      "url": "https://www.reddit.com/r/pakistan/s/7zU2jC5DRS",
+      "want": [
+        "video"
+      ],
+      "expect": {
+        "video": 1
+      },
+      "note": "Logged out, native reads the embed page's HLS playlist (Nov 8, 2026)."
+    },
+    {
+      "platform": "snapchat",
+      "name": "spotlight",
+      "url": "https://www.snapchat.com/spotlight/W7_EDlXWTBiXAEEniNoMPwAAYYWtidGhudGZpAX1TKn0JAX1TKnXJAAAAAA",
+      "want": [
+        "video"
+      ],
+      "expect": {
+        "video": 1
+      },
+      "cobalt": true
+    }
+  ]
+}

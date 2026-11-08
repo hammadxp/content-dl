@@ -155,13 +155,16 @@ def extract(
     if platform == "facebook":
         url = facebook.resolve_share_url(url, cookies)
 
+    if platform == "reddit":
+        url = NativeProvider(cookies).resolve_reddit_url(url)
+
     if platform == "pinterest":
         try:
             url = NativeProvider(cookies).resolve_pinterest_url(url)
         except ProviderError as error:
             raise ExtractionError(str(error)) from error
 
-    instance =CobaltInstance(cobalt) if isinstance(cobalt, str) else cobalt or CobaltInstance.from_env()
+    instance = CobaltInstance(cobalt) if isinstance(cobalt, str) else cobalt or CobaltInstance.from_env()
 
     if provider:
         try:

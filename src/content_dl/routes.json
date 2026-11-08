@@ -66,11 +66,11 @@
       "metadata": ["yt-dlp"]
     },
     "reddit": {
-      "video": ["yt-dlp", "cobalt"],
-      "images": ["gallery-dl"],
-      "thumbnail": ["yt-dlp"],
-      "avatar": ["gallery-dl"],
-      "metadata": ["gallery-dl", "yt-dlp"]
+      "video": ["native", "cobalt"],
+      "images": ["native"],
+      "thumbnail": ["native"],
+      "avatar": ["native"],
+      "metadata": ["native"]
     },
     "facebook": {
       "video": ["yt-dlp", "cobalt"],
@@ -102,6 +102,13 @@
     }
   },
   "routes_with_cookies": {
+    "reddit": {
+      "video": ["native", "yt-dlp", "cobalt"],
+      "images": ["native", "gallery-dl"],
+      "thumbnail": ["native", "yt-dlp"],
+      "avatar": ["native", "gallery-dl"],
+      "metadata": ["native", "gallery-dl", "yt-dlp"]
+    },
     "instagram": {
       "images": ["gallery-dl", "yt-dlp", "cobalt"],
       "avatar": ["gallery-dl", "native"],
