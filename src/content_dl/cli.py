@@ -320,6 +320,26 @@ def missing_message(
     return ". ".join(sentences)
 
 
+def extraction_error_message(error: ExtractionError, has_cookies: bool) -> str:
+    """The extraction error, with what to try next when the site wants a logged-in session.
+
+    >>> error = ExtractionError("X only shows this post to logged-in accounts", login_required=True)
+    >>> print(extraction_error_message(error, has_cookies=False))  # doctest: +NORMALIZE_WHITESPACE
+    X only shows this post to logged-in accounts. Add --cookies FILE or --cookies-from-browser BROWSER
+    from a logged-in session
+    >>> print(extraction_error_message(error, has_cookies=True))  # doctest: +NORMALIZE_WHITESPACE
+    X only shows this post to logged-in accounts. The cookies given aren't logged in, or have expired:
+    export them again
+    """
+    if not error.login_required:
+        return str(error)
+
+    if has_cookies:
+        return f"{error}. The cookies given aren't logged in, or have expired: export them again"
+
+    return f"{error}. Add --cookies FILE or --cookies-from-browser BROWSER from a logged-in session"
+
+
 def _load_result(path: str) -> Result:
     """A result saved with --json-only, so a host that already extracted and picked items doesn't extract twice."""
     with open(path, encoding="utf-8") as file:
@@ -366,7 +386,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 routes=args.routes,
                 cobalt=cobalt,
             )
-    except (ExtractionError, RouterError, SchemaError, OSError, ValueError) as error:
+    except ExtractionError as error:
+        print(f"content-dl: error: {extraction_error_message(error, has_cookies=bool(cookies))}", file=sys.stderr)
+        return 1
+    except (RouterError, SchemaError, OSError, ValueError) as error:
         print(f"content-dl: error: {error}", file=sys.stderr)
         return 1
 

@@ -20,6 +20,7 @@ from content_dl.providers.common import ext_from_url as _ext_from_url
 from content_dl.providers.native import facebook as facebook_url
 from content_dl.providers.native import instagram as instagram_url
 from content_dl.providers.native import tiktok as tiktok_url
+from content_dl.providers.native import x as x_url
 from content_dl.schema import Item, MediaType, Post, Profile, Result, SchemaError
 
 NAME = "gallery-dl"
@@ -39,8 +40,10 @@ SKIPPED_URL_PREFIXES = ("ytdl:", "text:")
 
 # Per-extractor options. Instagram's default yields "ytdl:" DASH URLs for videos; "merged" yields
 # the direct, already-muxed MP4 instead, which is a plain file any downloader can fetch.
+# X skips posts without media by default, so a text-only post would return nothing, not even its text.
 GALLERY_DL_OPTIONS: dict[str, dict[str, Any]] = {
     "instagram": {"videos": "merged"},
+    "twitter": {"text-tweets": True},
 }
 
 INSTAGRAM_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
@@ -412,6 +415,47 @@ def tiktok_profile_from_messages(messages: Sequence[Message], platform: str, use
     )
 
 
+def x_profile_from_messages(messages: Sequence[Message], platform: str, username: str) -> Profile:
+    """Translate gallery-dl's X ``/USER/photo`` run into a Profile holding the avatar.
+
+    The run's ``user`` is the account: ``name`` is the username, ``nick`` the display name.
+
+    >>> user = {"id": 42, "name": "someone", "nick": "Some One"}
+    >>> messages = [(3, "https://pbs.twimg.com/profile_images/1/pic.jpg", {"user": user, "extension": "jpg"})]
+    >>> profile = x_profile_from_messages(messages, "x", "someone")
+    >>> profile.id, profile.name, profile.url, profile.avatar.ext
+    ('42', 'Some One', 'https://x.com/someone', 'jpg')
+    """
+    directories = [message[1] for message in messages if message[0] == MESSAGE_DIRECTORY]
+    files = [(message[1], message[2]) for message in messages if message[0] == MESSAGE_URL]
+    info = files[0][1] if files else directories[0] if directories else {}
+    user = info.get("user") if isinstance(info.get("user"), dict) else {}
+    if not user:
+        raise ProviderError("gallery-dl found no account at this X profile")
+
+    name = _text(user.get("name")) or username
+    avatar = None
+    if files:
+        url, file = files[0]
+        avatar = Item(
+            media_type="avatar",
+            url=url,
+            ext=_text(file.get("extension")) or _ext_from_url(url),
+            width=_size(file.get("width")),
+            height=_size(file.get("height")),
+            provider=NAME,
+        )
+
+    return Profile(
+        platform=platform,
+        id=_id(user.get("id")),
+        username=name,
+        name=_text(user.get("nick")),
+        url=f"{x_url.ROOT}/{name}",
+        avatar=avatar,
+    )
+
+
 def config_entries(cookies: Cookies | None) -> list[tuple[tuple[str, ...], str, Any]]:
     """The gallery-dl config entries for one run: per-site options, plus the user's cookies.
 
@@ -565,6 +609,12 @@ class GalleryDlProvider:
                 # extractor returns the account and its picture in one request.
                 messages = self.fetch_messages(tiktok_url.avatar_page(username))
                 return tiktok_profile_from_messages(messages, platform, username)
+
+        if platform == "x" and (username := x_url.profile_username(url)):
+            # INFO: As on TikTok, the profile extractor queues the whole timeline; /photo returns the
+            # account and its picture in one request. An account without a picture has no file.
+            messages = self.fetch_messages(x_url.avatar_page(username))
+            return x_profile_from_messages(messages, platform, username)
 
         if platform == "facebook" and facebook_url.is_post_url(url):
             return self.facebook_post(platform, known, avatar_requested)

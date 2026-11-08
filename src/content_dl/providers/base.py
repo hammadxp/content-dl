@@ -17,6 +17,14 @@ class ProviderError(RuntimeError):
     """A provider couldn't extract this URL. The next provider in the route gets a turn."""
 
 
+class LoginRequiredError(ProviderError):
+    """The site only shows this URL to a logged-in session, so cookies are the fix.
+
+    extract() reports this reason alone when nothing else was found, since the other providers'
+    errors are the same failure in vaguer words.
+    """
+
+
 class NeedsKnownError(ProviderError):
     """A provider needs what another provider finds first, such as a pin's uploader id.
 

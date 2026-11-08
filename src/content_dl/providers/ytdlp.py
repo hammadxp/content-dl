@@ -13,7 +13,7 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
-from content_dl.providers.base import Cookies, ProviderError
+from content_dl.providers.base import Cookies, LoginRequiredError, ProviderError
 from content_dl.providers.common import ext_from_url as _ext_from_url
 from content_dl.schema import Item, MediaType, Post, Profile, Result, SchemaError
 
@@ -58,6 +58,9 @@ GENERATED_TITLES: dict[str, tuple[str, ...]] = {
 
 # Extractors whose ``channel`` field is the account's username rather than a display name.
 CHANNEL_IS_USERNAME = frozenset({"Instagram"})
+
+# INFO: On X, a one-video post's ``id`` is the video's media id and ``display_id`` the post's own id.
+POST_ID_IS_DISPLAY_ID = frozenset({"Twitter"})
 
 
 def _trim_format(fmt: dict[str, Any]) -> dict[str, Any]:
@@ -210,6 +213,19 @@ def items_from_info(info: dict[str, Any], index: int = 1, in_carousel: bool = Fa
     return items
 
 
+def _post_id_from_info(info: dict[str, Any]) -> str | None:
+    """
+    >>> _post_id_from_info({"id": "211910935", "display_id": "211910944", "extractor_key": "Twitter"})
+    '211910944'
+    >>> _post_id_from_info({"id": "dQw4w9WgXcQ", "display_id": "dQw4w9WgXcQ", "extractor_key": "Youtube"})
+    'dQw4w9WgXcQ'
+    """
+    if info.get("extractor_key") in POST_ID_IS_DISPLAY_ID and info.get("display_id") is not None:
+        return str(info["display_id"])
+
+    return str(info["id"]) if info.get("id") is not None else None
+
+
 def _upload_date_from_info(info: dict[str, Any]) -> int | float | str | None:
     """Prefer a full timestamp; fall back to yt-dlp's day-only ``upload_date``.
 
@@ -300,7 +316,7 @@ def post_from_info(info: dict[str, Any], platform: str) -> Post:
     try:
         return Post(
             platform=platform,
-            id=str(info["id"]) if info.get("id") is not None else None,
+            id=_post_id_from_info(info),
             title=_title_from_info(info),
             description=info.get("description") or None,
             upload_date=_upload_date_from_info(info),
@@ -456,6 +472,51 @@ def final_url(url: str, cookies: Cookies | None = None) -> str:
         raise ProviderError(f"request to {url} failed: {error_message(error)}") from error
 
 
+X_LOGGED_OUT_MESSAGE = "X only shows this post to logged-in accounts (it may be age-restricted, protected or deleted)"
+
+_own_media_twitter_ie: type | None = None
+
+
+def own_media_twitter_ie() -> type:
+    """yt-dlp's X extractor, limited to the post's own media.
+
+    INFO: yt-dlp adds a quoted post's videos to the quoting post, so a photo post that quotes a video
+    came back as that video, under the video's id. The quoted post is dropped from the status before
+    yt-dlp reads it, along with the link to it, which yt-dlp would otherwise follow when the post
+    has no video. Logged out, X answers an age-restricted post with an empty result that yt-dlp
+    reads as a post without media; that is raised as an error instead.
+    """
+    global _own_media_twitter_ie
+    if _own_media_twitter_ie is not None:
+        return _own_media_twitter_ie
+
+    from yt_dlp.extractor.twitter import TwitterIE
+    from yt_dlp.utils import ExtractorError
+
+    class OwnMediaTwitterIE(TwitterIE):
+        @classmethod
+        def ie_key(cls) -> str:
+            return TwitterIE.ie_key()
+
+        def _extract_status(self, twid: str) -> dict[str, Any]:
+            status = super()._extract_status(twid)
+            if not status.get("id_str"):
+                raise ExtractorError(X_LOGGED_OUT_MESSAGE, expected=True)
+
+            quoted_id = status.get("quoted_status_id_str")
+            status.pop("quoted_status", None)
+            urls = (status.get("entities") or {}).get("urls")
+            if quoted_id and isinstance(urls, list):
+                status["entities"]["urls"] = [
+                    link for link in urls if f"/status/{quoted_id}" not in str(link.get("expanded_url") or "")
+                ]
+
+            return status
+
+    _own_media_twitter_ie = OwnMediaTwitterIE
+    return OwnMediaTwitterIE
+
+
 class SilentLogger:
     """yt-dlp prints errors and warnings even when quiet; content-dl reports failures itself, once."""
 
@@ -493,15 +554,22 @@ class YtDlpProvider:
         # for the parts that don't need it.
         import yt_dlp
 
+        twitter_ie = own_media_twitter_ie()
         for attempt in range(1, NETWORK_ATTEMPTS + 1):
             try:
                 with yt_dlp.YoutubeDL(self.options) as ydl:
+                    if twitter_ie.suitable(url):
+                        # Replaces yt-dlp's own X extractor under the same key, in the same place.
+                        ydl.add_info_extractor(twitter_ie())
                     info = ydl.extract_info(url, download=False)
                     return ydl.sanitize_info(info)
             except yt_dlp.utils.DownloadError as error:
                 if attempt < NETWORK_ATTEMPTS and is_network_error(error):
                     time.sleep(RETRY_DELAY_SECONDS * attempt)
                     continue
+
+                if X_LOGGED_OUT_MESSAGE in str(error):
+                    raise LoginRequiredError(X_LOGGED_OUT_MESSAGE) from error
 
                 raise ProviderError(f"yt-dlp: {error_message(error)}") from error
 

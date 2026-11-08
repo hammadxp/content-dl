@@ -8,14 +8,21 @@ from typing import Any
 
 from content_dl.merge import merge
 from content_dl.providers import CobaltInstance, Cookies, ProviderError, get_provider, provider_covers
-from content_dl.providers.base import NeedsKnownError
+from content_dl.providers.base import LoginRequiredError, NeedsKnownError
 from content_dl.providers.native import NativeProvider, facebook
 from content_dl.router import MEDIA_TYPE_COLUMNS, RoutingConfig, columns_for, detect_platform, load_config
 from content_dl.schema import MEDIA_TYPES, MediaType, Post, Profile, Result
 
 
 class ExtractionError(RuntimeError):
-    """No provider could extract the URL."""
+    """No provider could extract the URL.
+
+    ``login_required`` is True when the site only shows the URL to a logged-in session.
+    """
+
+    def __init__(self, message: str, login_required: bool = False) -> None:
+        super().__init__(message)
+        self.login_required = login_required
 
 
 def normalise_media_types(media_types: Iterable[str] | None) -> list[MediaType] | None:
@@ -79,6 +86,7 @@ class _Fetcher:
         self.media_types = media_types
         self.results: dict[str, Result] = {}
         self.errors: dict[str, str] = {}
+        self.login_required: list[str] = []
         # Providers that asked to be tried again once others ran, with how many results they saw.
         self.waiting: dict[str, int] = {}
 
@@ -99,6 +107,8 @@ class _Fetcher:
             except ProviderError as error:
                 self.errors[name] = str(error)
                 self.waiting.pop(name, None)
+                if isinstance(error, LoginRequiredError):
+                    self.login_required.append(str(error))
 
         return self.results.get(name)
 
@@ -203,6 +213,9 @@ def extract(
                 break
 
     if not fetcher.results:
+        if fetcher.login_required:
+            raise ExtractionError(fetcher.login_required[0], login_required=True)
+
         raise ExtractionError("; ".join(fetcher.errors.values()))
 
     return _keep_media_types(merge(fetcher.results, row, chosen), chosen)
