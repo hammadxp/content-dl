@@ -295,3 +295,65 @@ def test_live_youtube_channel_is_a_profile(capsys) -> None:
     profile = result_from_json(capsys.readouterr().out)
     assert isinstance(profile, Profile)
     assert profile.username == "jawed" and profile.avatar
+
+
+class _FlakyYoutubeDL:
+    """Stands in for yt_dlp.YoutubeDL: fails with each queued error, then returns an info dict."""
+
+    failures: list = []
+    calls = 0
+
+    def __init__(self, options):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def extract_info(self, url, download=False):
+        type(self).calls += 1
+        if self.failures:
+            raise self.failures.pop(0)
+
+        return {"id": "1", "title": "ok"}
+
+    def sanitize_info(self, info):
+        return info
+
+
+def _download_error(cause):
+    from yt_dlp.utils import DownloadError, ExtractorError
+
+    return DownloadError("ERROR: failed", (ExtractorError, ExtractorError("failed", cause=cause), None))
+
+
+def test_dropped_connection_is_retried(monkeypatch) -> None:
+    import yt_dlp
+    from yt_dlp.networking.exceptions import SSLError
+
+    from content_dl.providers import ytdlp
+
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", _FlakyYoutubeDL)
+    monkeypatch.setattr(ytdlp, "RETRY_DELAY_SECONDS", 0)
+    _FlakyYoutubeDL.failures, _FlakyYoutubeDL.calls = [_download_error(SSLError("UNEXPECTED_EOF_WHILE_READING"))], 0
+
+    assert ytdlp.YtDlpProvider().fetch_info("https://www.pinterest.com/a/b/")["title"] == "ok"
+    assert _FlakyYoutubeDL.calls == 2
+
+
+def test_http_errors_are_not_retried(monkeypatch) -> None:
+    import yt_dlp
+
+    from content_dl.providers import ytdlp
+    from content_dl.providers.base import ProviderError
+
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", _FlakyYoutubeDL)
+    monkeypatch.setattr(ytdlp, "RETRY_DELAY_SECONDS", 0)
+    _FlakyYoutubeDL.failures, _FlakyYoutubeDL.calls = [_download_error(ValueError("HTTP Error 404"))], 0
+
+    with pytest.raises(ProviderError):
+        ytdlp.YtDlpProvider().fetch_info("https://www.pinterest.com/a/b/")
+
+    assert _FlakyYoutubeDL.calls == 1

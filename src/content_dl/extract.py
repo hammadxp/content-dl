@@ -8,7 +8,8 @@ from typing import Any
 
 from content_dl.merge import merge
 from content_dl.providers import CobaltInstance, Cookies, ProviderError, get_provider, provider_covers
-from content_dl.providers.native import facebook
+from content_dl.providers.base import NeedsKnownError
+from content_dl.providers.native import NativeProvider, facebook
 from content_dl.router import MEDIA_TYPE_COLUMNS, RoutingConfig, columns_for, detect_platform, load_config
 from content_dl.schema import MEDIA_TYPES, MediaType, Post, Profile, Result
 
@@ -78,17 +79,26 @@ class _Fetcher:
         self.media_types = media_types
         self.results: dict[str, Result] = {}
         self.errors: dict[str, str] = {}
+        # Providers that asked to be tried again once others ran, with how many results they saw.
+        self.waiting: dict[str, int] = {}
 
     def get(self, name: str) -> Result | None:
-        if name not in self.results and name not in self.errors:
+        retry = name in self.waiting and self.waiting[name] < len(self.results)
+        if name not in self.results and (name not in self.errors or retry):
             try:
                 # known is a copy, so a provider can't change what earlier providers returned.
                 provider = get_provider(name, self.cookies, self.cobalt)
                 self.results[name] = provider.extract(
                     self.url, self.platform, self.media_types, known=dict(self.results)
                 )
+                self.errors.pop(name, None)
+                self.waiting.pop(name, None)
+            except NeedsKnownError as error:
+                self.errors[name] = str(error)
+                self.waiting[name] = len(self.results)
             except ProviderError as error:
                 self.errors[name] = str(error)
+                self.waiting.pop(name, None)
 
         return self.results.get(name)
 
@@ -144,6 +154,12 @@ def extract(
     platform = detect_platform(url, config)
     if platform == "facebook":
         url = facebook.resolve_share_url(url, cookies)
+
+    if platform == "pinterest":
+        try:
+            url = NativeProvider(cookies).resolve_pinterest_url(url)
+        except ProviderError as error:
+            raise ExtractionError(str(error)) from error
 
     instance =CobaltInstance(cobalt) if isinstance(cobalt, str) else cobalt or CobaltInstance.from_env()
 

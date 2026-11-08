@@ -17,6 +17,13 @@ class ProviderError(RuntimeError):
     """A provider couldn't extract this URL. The next provider in the route gets a turn."""
 
 
+class NeedsKnownError(ProviderError):
+    """A provider needs what another provider finds first, such as a pin's uploader id.
+
+    extract() asks it again in a later routing column, once more providers have run.
+    """
+
+
 @dataclass(frozen=True)
 class Cookies:
     """Cookies the user supplied, passed as-is to every provider that can use them.

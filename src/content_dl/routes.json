@@ -16,7 +16,18 @@
     "snapchat.com": "snapchat",
     "facebook.com": "facebook",
     "fb.com": "facebook",
-    "fb.watch": "facebook"
+    "fb.watch": "facebook",
+    "pinterest.com": "pinterest",
+    "pin.it": "pinterest",
+    "pinterest.ca": "pinterest",
+    "pinterest.co.uk": "pinterest",
+    "pinterest.com.au": "pinterest",
+    "pinterest.com.mx": "pinterest",
+    "pinterest.de": "pinterest",
+    "pinterest.es": "pinterest",
+    "pinterest.fr": "pinterest",
+    "pinterest.it": "pinterest",
+    "pinterest.jp": "pinterest"
   },
   "routes": {
     "youtube": {
@@ -66,6 +77,13 @@
       "images": ["gallery-dl", "native"],
       "thumbnail": ["yt-dlp"],
       "avatar": ["gallery-dl"],
+      "metadata": ["native", "yt-dlp", "gallery-dl"]
+    },
+    "pinterest": {
+      "video": ["yt-dlp", "gallery-dl"],
+      "images": ["yt-dlp", "gallery-dl"],
+      "thumbnail": ["yt-dlp"],
+      "avatar": ["native"],
       "metadata": ["native", "yt-dlp", "gallery-dl"]
     },
     "snapchat": {

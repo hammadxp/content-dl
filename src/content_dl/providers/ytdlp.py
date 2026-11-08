@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from collections.abc import Mapping
 from typing import Any
 
@@ -145,12 +146,16 @@ def _thumbnail_from_info(info: dict[str, Any], index: int, media_type: MediaType
     )
 
 
+# yt-dlp extractors whose pages can be a photo rather than a video.
+STILL_EXTRACTORS = frozenset({"Pinterest"})
+
+
 def items_from_info(info: dict[str, Any], index: int = 1, in_carousel: bool = False) -> list[Item]:
     """Turn one yt-dlp video entry into its video, audio and thumbnail items.
 
     All items share ``index``, so a UI can group the video with its audio and cover image.
-    In a carousel an entry without streams is a still image, so its picture is an ``image``
-    item rather than a thumbnail.
+    In a carousel, or from an extractor whose pages are often photos (a Pinterest image pin), an
+    entry without streams is a still image, so its picture is an ``image`` item rather than a thumbnail.
     """
     formats = info.get("formats") or []
     video_formats = [fmt for fmt in formats if _has_video(fmt)]
@@ -197,7 +202,7 @@ def items_from_info(info: dict[str, Any], index: int = 1, in_carousel: bool = Fa
             )
         )
 
-    still = in_carousel and not items
+    still = (in_carousel or extractor in STILL_EXTRACTORS) and not items
     thumbnail = _thumbnail_from_info(info, index, "image" if still else "thumbnail")
     if thumbnail:
         items.append(thumbnail)
@@ -376,6 +381,48 @@ def host_options() -> dict[str, Any]:
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 
 
+# INFO: yt-dlp retries downloads but not most extractors' metadata requests, so a dropped
+# connection (Pinterest sometimes ends TLS early) would fail the whole URL. HTTP errors aren't retried.
+NETWORK_ATTEMPTS = 3
+RETRY_DELAY_SECONDS = 1.0
+
+
+def is_network_error(error: BaseException) -> bool:
+    """Did yt-dlp fail because the connection broke (TLS, reset, timeout) rather than on an answer?
+
+    >>> from yt_dlp.networking.exceptions import HTTPError, TransportError
+    >>> from yt_dlp.utils import DownloadError, ExtractorError
+    >>> def failed(cause):
+    ...     return DownloadError("x", (ExtractorError, ExtractorError("x", cause=cause), None))
+    >>> is_network_error(failed(TransportError("EOF occurred in violation of protocol")))
+    True
+    >>> is_network_error(failed(ValueError("bad JSON")))
+    False
+    """
+    from yt_dlp.networking.exceptions import TransportError
+
+    seen: set[int] = set()
+    pending: list[BaseException | None] = [error]
+    while pending:
+        current = pending.pop()
+        if current is None or id(current) in seen:
+            continue
+
+        seen.add(id(current))
+        if isinstance(current, TransportError):
+            return True
+
+        exc_info = getattr(current, "exc_info", None)
+        pending += [
+            exc_info[1] if isinstance(exc_info, tuple) and len(exc_info) > 1 else None,
+            getattr(current, "cause", None),
+            current.__cause__,
+            current.__context__,
+        ]
+
+    return False
+
+
 def error_message(error: BaseException) -> str:
     """yt-dlp's error text without its "ERROR:" prefix.
 
@@ -446,13 +493,19 @@ class YtDlpProvider:
         # for the parts that don't need it.
         import yt_dlp
 
-        try:
-            with yt_dlp.YoutubeDL(self.options) as ydl:
-                info = ydl.extract_info(url, download=False)
-                return ydl.sanitize_info(info)
-        except yt_dlp.utils.DownloadError as error:
-            message = error_message(error)
-            raise ProviderError(f"yt-dlp: {message}") from error
+        for attempt in range(1, NETWORK_ATTEMPTS + 1):
+            try:
+                with yt_dlp.YoutubeDL(self.options) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    return ydl.sanitize_info(info)
+            except yt_dlp.utils.DownloadError as error:
+                if attempt < NETWORK_ATTEMPTS and is_network_error(error):
+                    time.sleep(RETRY_DELAY_SECONDS * attempt)
+                    continue
+
+                raise ProviderError(f"yt-dlp: {error_message(error)}") from error
+
+        raise AssertionError("unreachable")
 
     def fetch_avatar(self, uploader_url: str) -> Item | None:
         """Look up an uploader's avatar on their channel page. A failure leaves it unset."""
