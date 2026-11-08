@@ -603,7 +603,7 @@ def test_live_youtube_download(tmp_path) -> None:
         assert probe_tags(tmp_path / names[1])["title"] == "Me at the zoo"
 
 
-# Picking single items (milestone 8: what the Seal fork's picker needs)
+# Picking single items (milestone 8: what Markhor's picker needs)
 
 
 def test_picks_choose_single_items_and_the_avatar() -> None:

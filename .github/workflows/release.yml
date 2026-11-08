@@ -1,4 +1,5 @@
-# Builds content-dl executables for Windows, macOS and Linux and publishes them as a GitHub release.
+# Builds content-dl executables for Windows, macOS and Linux, and the Android zipapp (content-dl.pyz),
+# and publishes them as a GitHub release. Markhor updates content-dl from the latest release's zipapp.
 #
 # INFO: The version is "1.<commit count>", so each release tag (v1.21, v1.22, ...) maps to one
 # commit. Only changes to what ships in the executables trigger a release (code, pyproject.toml, the
@@ -17,6 +18,7 @@ on:
       - "pyproject.toml"
       - "bundle/requirements.txt"
       - "scripts/build_exe.py"
+      - "scripts/build_pyz.py"
   workflow_dispatch:
 
 permissions:

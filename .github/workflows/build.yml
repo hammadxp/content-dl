@@ -1,5 +1,5 @@
-# Tests content-dl and builds the Windows, macOS and Linux executables. Not run on its own: release.yml
-# uses it to publish, and checks.yml uses it to check PRs before they're merged.
+# Tests content-dl and builds the Windows, macOS and Linux executables and the Android zipapp. Not run
+# on its own: release.yml uses it to publish, and checks.yml uses it to check PRs before they're merged.
 
 name: Build
 
@@ -55,5 +55,37 @@ jobs:
         with:
           name: ${{ matrix.name }}
           path: dist/${{ matrix.file }}
+          if-no-files-found: error
+          retention-days: 7
+
+  # The zipapp Markhor runs on Android, and downloads from each release to update content-dl
+  # without a new APK. It is pure Python, so one build serves every phone.
+  pyz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # build_pyz.py counts commits for the version.
+          fetch-depth: 0
+
+      # INFO: youtubedl-android's runtime is CPython 3.11, so the smoke test runs on the same version.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Build
+        run: python scripts/build_pyz.py
+
+      # The phone runs the zipapp with -S (no site-packages), so a package missing from the zipapp
+      # fails here instead of on the phone.
+      - name: Smoke test
+        run: |
+          python -S dist/content-dl.pyz --version
+          python -S -c "import sys; sys.path.insert(0, 'dist/content-dl.pyz'); import gallery_dl, requests, yt_dlp"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: content-dl.pyz
+          path: dist/content-dl.pyz
           if-no-files-found: error
           retention-days: 7

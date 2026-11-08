@@ -377,7 +377,7 @@ def parse_js_runtimes(value: str) -> dict[str, dict[str, str]]:
 def host_options() -> dict[str, Any]:
     """yt-dlp options that describe the host rather than one request: its JS runtime and ffmpeg.
 
-    INFO: The Seal fork needs these on Android, where yt-dlp's default runtime (deno) doesn't exist
+    INFO: Markhor needs these on Android, where yt-dlp's default runtime (deno) doesn't exist
     and YouTube needs a JS runtime. youtubedl-android ships QuickJS and ffmpeg as native libraries,
     and passes the same two settings to yt-dlp. Read from the environment so every yt-dlp call,
     in extraction and in downloads, sees them without threading them through ``extract()``.

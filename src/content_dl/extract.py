@@ -1,4 +1,4 @@
-"""The one call every interface (CLI, HTTP server, Seal fork) is a thin shell over."""
+"""The one call every interface (CLI, HTTP server, Markhor) is a thin shell over."""
 
 from __future__ import annotations
 

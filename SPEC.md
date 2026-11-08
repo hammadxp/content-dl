@@ -12,7 +12,7 @@ content-dl takes one URL and returns everything that can be extracted from it, i
 - Media types: video, audio, image, thumbnail, avatar (profile picture).
 - Metadata on every result: id, title, uploader, upload date, platform. A field the platform doesn't provide is `null` (see the serialisation rules under Data model).
 - Public content by default. Cookies are optional: when the user supplies them (a cookies.txt file or a browser's cookie store), every provider gets them and the router prefers logged-in routes. content-dl never signs in or stores credentials itself.
-- Runs on desktop (CLI, Python API, optional HTTP server) and on Android, embedded in the Seal fork.
+- Runs on desktop (CLI, Python API, optional HTTP server) and on Android, embedded in Markhor (the Seal fork).
 
 **Out of scope for v1**
 
@@ -22,7 +22,7 @@ content-dl takes one URL and returns everything that can be extracted from it, i
 
 ## Architecture
 
-The Seal fork, the CLI and the HTTP server are thin shells over one `extract()` call. Only the providers know about yt-dlp or gallery-dl; everything after the merger sees content-dl's own format.
+Markhor, the CLI and the HTTP server are thin shells over one `extract()` call. Only the providers know about yt-dlp or gallery-dl; everything after the merger sees content-dl's own format.
 
 &#91;embedded content: content-dl architecture · 3 interfaces, 4 providers, 1 output format\]
 
@@ -166,8 +166,8 @@ The CLI's flags are content-dl's own and spelled out, so they aren't mistaken fo
 | `content-dl --cookies cookies.txt URL` | Use cookies from a Netscape cookies.txt file, and prefer logged-in routes |
 | `content-dl --cookies-from-browser firefox URL` | Same, reading the cookies from a browser's store (`BROWSER[:PROFILE]`) |
 | `content-dl --embed-metadata URL` | Write metadata into the files (ffmpeg tags for video and audio, EXIF/XMP for images) |
-| `content-dl --from-json result.json --items image:1,video:2,avatar --report-json` | Save single items of a result `--json-only` already printed, without extracting again, and report each one as a JSON line (the Seal fork's picker uses this) |
-| `content-dl --js-runtimes quickjs:PATH --ffmpeg-location PATH URL` | Tell yt-dlp which JS runtime and ffmpeg to use, as its own flags do (the Seal fork passes youtubedl-android's) |
+| `content-dl --from-json result.json --items image:1,video:2,avatar --report-json` | Save single items of a result `--json-only` already printed, without extracting again, and report each one as a JSON line (Markhor's picker uses this) |
+| `content-dl --js-runtimes quickjs:PATH --ffmpeg-location PATH URL` | Tell yt-dlp which JS runtime and ffmpeg to use, as its own flags do (Markhor passes youtubedl-android's) |
 | `content-dl serve --port 8080` | Start the optional HTTP server |
 
 **HTTP endpoints** (for `content-dl serve`)
@@ -177,29 +177,34 @@ The CLI's flags are content-dl's own and spelled out, so they aren't mistaken fo
 
 The Python API is the same thing without the process: `content_dl.extract(url, media_types=[...])` returns the result object, and `extract(url, cookies=Cookies(file="cookies.txt"))` passes cookies.
 
-## Android and the Seal fork
+## Android and Markhor
 
-content-dl runs on the phone, embedded in the Seal fork, the same way yt-dlp runs inside Seal today. The Seal fork becomes a UI over content-dl and stops talking to yt-dlp directly.
+content-dl runs on the phone inside Markhor, an Android app forked from Seal (repository folder `(Forked)/markhor`, package `com.hammadxp.markhor`). Markhor is a UI over content-dl and stops talking to yt-dlp directly.
 
 **Why on the phone:** requests go out from your mobile IP, which Instagram and Threads treat as a normal user. A server on a datacenter IP gets rate-limited much sooner.
 
-**Runtime:** Seal uses youtubedl-android, which bundles CPython 3.11 and starts yt-dlp as `libpython.so <yt-dlp zipapp> ARGS`. Its site-packages holds only `mutagen` and `Cryptodome`, so content-dl ships as its own zipapp, `content-dl.pyz` (built by `scripts/build_pyz.py`), that carries gallery-dl, `requests` and their pure-Python dependencies. The fork starts it the same way, with the same environment, and puts Seal's own yt-dlp zipapp on `PYTHONPATH`, so content-dl imports the copy Seal already keeps up to date. It also passes youtubedl-android's QuickJS and ffmpeg to yt-dlp with `--js-runtimes` and `--ffmpeg-location` (also `CONTENT_DL_JS_RUNTIMES` and `CONTENT_DL_FFMPEG_LOCATION`), as youtubedl-android does for yt-dlp. Chaquopy is no longer needed as a fallback.
+**Runtime:** Seal uses youtubedl-android, which bundles CPython 3.11 and starts yt-dlp as `libpython.so <yt-dlp zipapp> ARGS`. Its site-packages holds only `mutagen` and `Cryptodome`, so content-dl ships as its own zipapp, `content-dl.pyz` (built by `scripts/build_pyz.py`), that carries yt-dlp, gallery-dl, `requests` and their pure-Python dependencies. Markhor starts it the same way, with the same environment. youtubedl-android's own yt-dlp is never used or updated. Markhor also passes youtubedl-android's QuickJS and ffmpeg to yt-dlp with `--js-runtimes` and `--ffmpeg-location` (also `CONTENT_DL_JS_RUNTIMES` and `CONTENT_DL_FFMPEG_LOCATION`), as youtubedl-android does for yt-dlp. Chaquopy is no longer needed as a fallback.
 
 **Share-sheet flow in the fork**
 
 1. The user shares a URL to the app.
 2. The app runs `extract(url)` and shows what was found, grouped: "3 images, 1 video, avatar".
 3. The user picks items (and a video quality, from `formats`).
-4. The app saves them with content-dl's downloader, from the result it already has (`--from-json`, `--items`), so nothing is extracted twice. Plain files are fetched by content-dl; video and audio stay with yt-dlp inside content-dl, because it handles stream merging and ffmpeg. Files get content-dl's names and embedded metadata, the same as on desktop, in Seal's download folder.
-5. Each saved file is added to the media library and to Seal's existing Room download-history database, one row per file. Still pictures use the saved file as their history thumbnail, because CDN URLs expire.
+4. The app saves them with content-dl's downloader, from the result it already has (`--from-json`, `--items`), so nothing is extracted twice. Plain files are fetched by content-dl; video and audio stay with yt-dlp inside content-dl, because it handles stream merging and ffmpeg. Files get content-dl's names and embedded metadata, the same as on desktop, in Markhor's download folder.
+5. Each saved file is added to the media library and to the Room download-history database inherited from Seal, one row per file. Still pictures use the saved file as their history thumbnail, because CDN URLs expire.
 
-**Updates:** yt-dlp, gallery-dl, content-dl's native providers and the routing table all update without a new APK, the same way Seal updates yt-dlp today.
+**Updates:** yt-dlp, gallery-dl, content-dl's native providers and the routing table all update without a new APK.
 
-**Cookies on Android:** Seal already has a cookies setting for yt-dlp. The fork passes the same cookies to content-dl as a cookies.txt file, so the logged-in routes work on the phone too.
+- All of them are inside `content-dl.pyz`, which every release publishes with an entry in `SHA2-256SUMS`. The zipapp carries its version ("1.N") in `content_dl/_version.py`, and its yt-dlp, gallery-dl and `requests` are the exact versions in `bundle/requirements.txt`. Dependabot checks those daily and `checks.yml` releases passing bumps on its own, so a new yt-dlp reaches phones within about a day. Seal's own yt-dlp updater and its settings are removed.
+- Markhor's `ContentDlUpdater` checks GitHub's latest release once a day, before a share is extracted (and on the first share after install). When the release is newer than the zipapp in use, it downloads it, checks the checksum and the version inside it, runs `--version` with the phone's Python, and only then keeps it. Any failure keeps the current copy.
+- The APK still bundles a zipapp. Markhor runs whichever of the bundled and downloaded copies is newer, so an APK update with a newer content-dl replaces an older download.
+- Because a new zipapp can reach an older APK, the CLI flags and the result JSON the fork uses (`--json-only`, `--from-json`, `--items`, `--report-json`, `--ytdlp-format`, `--cookies`, `--js-runtimes`, `--ffmpeg-location`, `--embed-metadata`) must stay backward compatible. Add new flags and fields; don't rename or remove these without a Markhor release first.
+
+**Cookies on Android:** Markhor keeps Seal's cookies setting and passes the same cookies to content-dl as a cookies.txt file, so the logged-in routes work on the phone too.
 
 ## Build order
 
-Each milestone can be tested from the command line on desktop. Seal isn't touched until milestone 7.
+Each milestone can be tested from the command line on desktop. The app isn't touched until milestone 7.
 
 1. [x] **Schema.** Post, Profile and Item as typed Python classes, with JSON serialisation.
    - Done when: the two examples above round-trip through the classes unchanged.
@@ -214,12 +219,13 @@ Each milestone can be tested from the command line on desktop. Seal isn't touche
 6. [x] **Routing config.** Fallbacks driven by the JSON table.
    - Done when: an override file can turn a provider off for one platform or for all.
    - Nov 8, 2026: the cobalt provider was removed. Native providers now cover every platform where it was a fallback, and it needed a self-hosted server.
-7. [x] **Android.** content-dl running inside the Seal fork's Python runtime.
+7. [x] **Android.** content-dl running inside the app's Python runtime.
    - Done when: the fork prints `extract()` output for a shared URL on a real phone.
    - Checked Nov 7, 2026 on a Pixel 7 (Android 17): sharing a YouTube URL to "Extract with content-dl" (the fork's `content-dl` branch) printed the full Post, with video, audio, thumbnail and avatar, on screen and to Logcat (tag `content-dl`). This needed a current yt-dlp. A fresh install still has youtubedl-android's bundled 2024.09.27 yt-dlp, which YouTube rejects (only the thumbnail comes back) until Seal's yt-dlp update runs.
-8. [ ] **Seal fork UI.** Share-sheet picker, downloads, history.
+8. [ ] **Markhor UI.** Share-sheet picker, downloads, history.
    - Done when: sharing an Instagram post lets you pick and save individual images and the avatar.
    - Status (Nov 7, 2026): the fork's "Extract with content-dl" share target now opens a picker: the uploader, the caption, a summary ("3 images, 1 video, avatar"), then every item grouped by media type, with a quality menu on each video. Picked items save through `content-dl --from-json --items --report-json`, show their progress one by one, and land in Seal's download folder and history. A share runs Seal's yt-dlp update first when yt-dlp has never been updated on that install, or when Seal's auto-update is due. On desktop, the same commands saved a YouTube video's thumbnail and avatar, and its video at a picked quality merged with audio. Instagram refused the desktop IP logged out, so the Instagram check is still to do on a real phone.
+   - Nov 8, 2026: the fork is renamed Markhor (`com.hammadxp.markhor`, installs separately from Seal) and builds with Gradle 9.9, AGP 9.5, Kotlin 2.4 and JDK 25. yt-dlp now comes inside `content-dl.pyz`, and Seal's yt-dlp updater, its settings and the share target's yt-dlp update step are removed. `ContentDlUpdater` keeps content-dl (and with it yt-dlp) current from GitHub releases. Not yet checked on a phone.
 
 ## Open questions and risks
 
@@ -233,6 +239,6 @@ Each milestone can be tested from the command line on desktop. Seal isn't touche
 | Rate limits on Instagram and Threads, even from a mobile IP | Requests fail after heavy use | Cache results, back off on errors, fall back to the next provider |
 | gallery-dl's `extractor.module-sources` option for loading extra extractors | Decides whether Threads can be a gallery-dl extractor | Decided in milestone 4: Threads is a content-dl native provider, which needs no gallery-dl extension point |
 | Instagram's `web_profile_info` answered HTTP 404 to a logged-out desktop request (Nov 7, 2026), and the logged-out profile page was an error page | Instagram avatars may need the user's cookies, or another route | Check from a mobile IP and with cookies; if it stays closed, find another logged-out source for the avatar |
-| A fresh Seal install runs youtubedl-android's bundled yt-dlp (2024.09.27), which YouTube rejects | content-dl gets no YouTube streams until yt-dlp is updated | Done in milestone 8: the share target runs Seal's yt-dlp update before extracting when yt-dlp was never updated on that install, or when Seal's auto-update is due. If the update fails, it extracts with the current yt-dlp |
+| A fresh install runs youtubedl-android's bundled yt-dlp (2024.09.27), which YouTube rejects | content-dl gets no YouTube streams until yt-dlp is updated | Solved Nov 8, 2026: yt-dlp is bundled in `content-dl.pyz`, so even the APK's own copy carries the yt-dlp of its content-dl release, and later ones arrive with content-dl updates. Seal's original download screens still call youtubedl-android's yt-dlp, which no longer updates; they go away in the Markhor overhaul |
 | Latest yt-dlp needs Python 3.11 or newer | content-dl's `requires-python = ">=3.10"` is looser than its main dependency | The phone's runtime is 3.11, so Android is fine; raise `requires-python` to 3.11 when convenient |
 | Licensing: yt-dlp is Unlicense, gallery-dl GPL-2.0, Seal GPL-3.0 | Affects how content-dl can be licensed and shipped | Confirm each license before the first release |

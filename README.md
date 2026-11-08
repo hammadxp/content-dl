@@ -19,6 +19,7 @@ content-dl works like yt-dlp: you can download what a link holds, list it first,
 - [Environment variables](#environment-variables)
 - [Troubleshooting](#troubleshooting)
 - [Updating](#updating)
+- [Android](#android)
 - [Development](#development)
 
 ## Supported sites
@@ -614,6 +615,24 @@ git pull
 
 ```bash
 pip install -e .
+```
+
+## Android
+
+content-dl runs on Android inside Markhor, an app built from a fork of [Seal](https://github.com/JunkFood02/Seal) that uses the Python runtime Seal ships. Each release publishes `content-dl.pyz` next to the executables: a single zipapp with content-dl, yt-dlp, gallery-dl and their pure-Python dependencies, at the same versions as the executables.
+
+Markhor ships one `content-dl.pyz` inside the APK and checks the [latest release](https://github.com/hammadxp/content-dl/releases/latest) once a day. A newer zipapp is downloaded, checked against `SHA2-256SUMS`, started once with `--version`, and only then used. So a fix in content-dl, or a new yt-dlp or gallery-dl, reaches the phone with a release here, without a new APK. Markhor doesn't update yt-dlp any other way.
+
+To build the zipapp yourself:
+
+```bash
+python scripts/build_pyz.py
+```
+
+Run it the way the phone does (no site-packages):
+
+```bash
+python -S dist/content-dl.pyz --version
 ```
 
 ## Development

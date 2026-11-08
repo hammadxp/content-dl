@@ -1,28 +1,28 @@
-"""Build content-dl as a single zipapp for the Seal fork's Python runtime.
+"""Build content-dl as a single zipapp for Markhor, the Android app built on content-dl.
 
-youtubedl-android (the library Seal uses) ships CPython 3.11 whose site-packages only holds
-mutagen and pycryptodomex, and it runs yt-dlp as `libpython.so <yt-dlp zipapp> ARGS`. content-dl
-runs the same way, so this zipapp carries everything content-dl needs that the runtime lacks:
-gallery-dl, requests and their pure-Python dependencies.
+Markhor runs Python through youtubedl-android, which ships CPython 3.11 whose site-packages only
+holds mutagen and pycryptodomex. content-dl runs as `libpython.so content-dl.pyz ARGS`, so this
+zipapp carries everything content-dl needs that the runtime lacks: yt-dlp, gallery-dl, requests and
+their pure-Python dependencies. Markhor doesn't update yt-dlp on its own: a new yt-dlp reaches the
+phone as a new content-dl release.
 
-Two packages are deliberately left out:
+curl_cffi is deliberately left out: it is compiled, and its only Android wheel needs Python 3.13+.
+content-dl and yt-dlp both fall back to plain requests or urllib without it.
 
-- yt-dlp: Seal already ships and updates its own yt-dlp zipapp. The fork puts that file on
-  PYTHONPATH, so `import yt_dlp` finds it and content-dl never pins a second, older copy.
-  Pass --with-yt-dlp for a fully self-contained zipapp (desktop testing, other hosts).
-- curl_cffi: compiled, and its only Android wheel needs Python 3.13+. content-dl and yt-dlp both
-  fall back to plain requests or urllib without it.
+The bundled packages use the exact versions in bundle/requirements.txt, the same ones the desktop
+executables ship, and the zipapp reports the same "1.N" version (from the commit count). Releases
+publish it as `content-dl.pyz`, which Markhor downloads to update content-dl without a new APK.
 
 Usage:
 
     python scripts/build_pyz.py                  # dist/content-dl.pyz
-    python scripts/build_pyz.py --with-yt-dlp    # also bundle yt-dlp
     python -S dist/content-dl.pyz -J URL         # run it the way the phone does
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import re
 import shutil
 import subprocess
@@ -33,13 +33,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PACKAGE_DIR = ROOT / "src" / "content_dl"
+PINNED_FILE = ROOT / "bundle" / "requirements.txt"
 
 # INFO: youtubedl-android 0.17.x bundles CPython 3.11. Wheels are resolved for that version, as
 # pure-Python ("py") wheels only, so nothing compiled for the desktop slips into the phone build.
 TARGET_PYTHON = "3.11"
-
-# Names as they appear in pyproject.toml's dependencies, matched without extras or versions.
-LEFT_TO_HOST = {"yt-dlp"}
 
 MAIN_PY = "from content_dl.cli import main\n\nraise SystemExit(main())\n"
 
@@ -74,17 +72,39 @@ def requirement_name(requirement: str) -> str:
     return re.split(r"[\[<>=!~;\s]", requirement, maxsplit=1)[0]
 
 
-def bundled_requirements(with_yt_dlp: bool) -> list[str]:
-    """Pick the dependencies to bundle, dropping extras so compiled ones (curl_cffi) stay out."""
+def pinned_versions(text: str) -> dict[str, str]:
+    """Exact versions from a requirements file, keyed by project name.
+
+    >>> pinned_versions("# note\\nyt-dlp[curl-cffi]==2026.10.26\\nrequests==2.34.2\\n")
+    {'yt-dlp': '2026.10.26', 'requests': '2.34.2'}
+    """
+    return dict(re.findall(r"^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?==(\S+)", text, re.M))
+
+
+def bundled_requirements() -> list[str]:
+    """Pick the dependencies to bundle, at their pinned versions, without extras.
+
+    Dropping extras keeps compiled packages (yt-dlp's curl_cffi) out of the zipapp.
+    """
+    pinned = pinned_versions(PINNED_FILE.read_text(encoding="utf-8")) if PINNED_FILE.exists() else {}
     bundled = []
     for requirement in read_dependencies(ROOT / "pyproject.toml"):
         name = requirement_name(requirement)
-        if name in LEFT_TO_HOST and not with_yt_dlp:
-            continue
-
-        bundled.append(re.sub(r"\[[^\]]*\]", "", requirement))
+        if name in pinned:
+            bundled.append(f"{name}=={pinned[name]}")
+        else:
+            bundled.append(re.sub(r"\[[^\]]*\]", "", requirement))
 
     return bundled
+
+
+def release_version() -> str:
+    """The "1.N" version build_exe.py gives the executables built from this commit."""
+    spec = importlib.util.spec_from_file_location("build_exe", Path(__file__).with_name("build_exe.py"))
+    build_exe = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build_exe)
+
+    return build_exe.version_from_commits(build_exe.commit_count())
 
 
 def install(requirements: list[str], target: Path) -> None:
@@ -121,12 +141,15 @@ def strip(target: Path) -> None:
                 shutil.rmtree(path)
 
 
-def build(output: Path, with_yt_dlp: bool) -> Path:
+def build(output: Path, version: str) -> Path:
     with tempfile.TemporaryDirectory(prefix="content-dl-pyz-") as tmp:
         staging = Path(tmp)
-        install(bundled_requirements(with_yt_dlp), staging)
+        install(bundled_requirements(), staging)
         copy_package(staging)
         strip(staging)
+        # INFO: Written into the staged copy, not src/, so building never leaves files behind. The
+        # Markhor reads this file straight from the zip to compare its bundled and downloaded copies.
+        (staging / "content_dl" / "_version.py").write_text(f'__version__ = "{version}"\n', encoding="utf-8")
         # INFO: zipapp's own `main=` entry point drops main()'s return value, so every run would exit
         # 0 and the fork couldn't tell a failed extraction from an empty one. Write the entry point.
         (staging / "__main__.py").write_text(MAIN_PY, encoding="utf-8")
@@ -138,13 +161,13 @@ def build(output: Path, with_yt_dlp: bool) -> Path:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build content-dl as a zipapp for the Seal fork's Python runtime.")
+    parser = argparse.ArgumentParser(description="Build content-dl as a zipapp for Markhor's Python runtime.")
     parser.add_argument("-o", "--output", type=Path, default=ROOT / "dist" / "content-dl.pyz", help="output file")
-    parser.add_argument("--with-yt-dlp", action="store_true", help="bundle yt-dlp instead of using the host's copy")
     args = parser.parse_args()
 
-    path = build(args.output, args.with_yt_dlp)
-    print(f"{path} ({path.stat().st_size / 1_000_000:.1f} MB)")
+    version = release_version()
+    path = build(args.output, version)
+    print(f"{path} {version} ({path.stat().st_size / 1_000_000:.1f} MB)")
     return 0
 
 

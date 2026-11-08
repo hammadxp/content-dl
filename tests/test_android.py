@@ -1,7 +1,7 @@
-"""Milestone 7: what content-dl needs to run inside the Seal fork's Python runtime.
+"""Milestone 7: what content-dl needs to run inside Markhor's Python runtime.
 
-The phone runs content-dl as a zipapp with Seal's own yt-dlp on PYTHONPATH, and passes yt-dlp
-the JS runtime and ffmpeg that youtubedl-android ships. These tests cover that wiring offline.
+The phone runs content-dl as a zipapp that bundles yt-dlp and gallery-dl, and passes yt-dlp the
+JS runtime and ffmpeg that youtubedl-android ships. These tests cover that wiring offline.
 Building and running the zipapp itself is checked by hand (see scripts/build_pyz.py).
 """
 
@@ -9,7 +9,6 @@ import importlib.util
 import json
 from pathlib import Path
 
-import pytest
 
 from content_dl.cli import main
 from content_dl.providers import YtDlpProvider
@@ -19,8 +18,8 @@ FIXTURES = Path(__file__).parent / "fixtures"
 SCRIPT = Path(__file__).parent.parent / "scripts" / "build_pyz.py"
 VIDEO_URL = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
 
-QJS = "/data/app/com.junkfood.seal/lib/arm64/libqjs.so"
-FFMPEG = "/data/app/com.junkfood.seal/lib/arm64/libffmpeg.so"
+QJS = "/data/app/com.hammadxp.markhor/lib/arm64/libqjs.so"
+FFMPEG = "/data/app/com.hammadxp.markhor/lib/arm64/libffmpeg.so"
 
 
 def load_build_script():
@@ -66,13 +65,14 @@ def test_cli_flags_reach_the_yt_dlp_provider(monkeypatch, capsys) -> None:
     assert seen[0]["ffmpeg_location"] == FFMPEG
 
 
-@pytest.mark.parametrize(("with_yt_dlp", "expected"), [(False, False), (True, True)])
-def test_zipapp_leaves_yt_dlp_to_the_host(with_yt_dlp, expected) -> None:
+def test_zipapp_bundles_every_tool_at_its_pinned_version() -> None:
     build = load_build_script()
-    requirements = build.bundled_requirements(with_yt_dlp)
-    names = [build.requirement_name(requirement) for requirement in requirements]
+    pinned = build.pinned_versions(build.PINNED_FILE.read_text(encoding="utf-8"))
+    requirements = build.bundled_requirements()
 
-    assert ("yt-dlp" in names) is expected
-    assert {"gallery-dl", "requests"} <= set(names)
+    # The phone gets the same yt-dlp and gallery-dl as the desktop executables of the same release,
+    # and yt-dlp updates on the phone only through content-dl releases.
+    for name in ("yt-dlp", "gallery-dl", "requests"):
+        assert f"{name}=={pinned[name]}" in requirements
     # Extras are dropped, so yt-dlp's curl-cffi extra (compiled, no Python 3.11 Android wheel) stays out.
     assert not any("[" in requirement for requirement in requirements)
