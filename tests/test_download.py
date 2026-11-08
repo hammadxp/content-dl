@@ -144,28 +144,28 @@ def test_default_template_names_every_item_of_a_carousel() -> None:
     names = [render(DEFAULT_TEMPLATE, template_context(post, item)).as_posix() for item in post.items]
 
     assert names == [
-        "sunset at the beach 🌅 (Some One)-01.jpg",
-        "sunset at the beach 🌅 (Some One)-02.mp4",
-        "sunset at the beach 🌅 (Some One)-02.m4a",
-        "sunset at the beach 🌅 (Some One)-02.jpg",
+        "sunset at the beach 🌅 (someone) (DAsTXK3JbrA)-01.jpg",
+        "sunset at the beach 🌅 (someone) (DAsTXK3JbrA)-02.mp4",
+        "sunset at the beach 🌅 (someone) (DAsTXK3JbrA)-02.m4a",
+        "sunset at the beach 🌅 (someone) (DAsTXK3JbrA)-02.jpg",
     ]
 
 
 def test_default_template_leaves_out_the_number_of_a_single_item() -> None:
-    uploader = Profile(platform="x", username="haroon", avatar=Item(media_type="avatar", ext="jpg"))
+    uploader = Profile(platform="x", username="someone", name="Some One", avatar=Item(media_type="avatar", ext="jpg"))
     post = Post(
         platform="x",
         id="190",
-        title="haroon - sunset over the hills, first trip of the...",
+        title="Some One - sunset over the hills, first trip of the...",
         description="sunset over the hills, first trip of the year https://t.co/abc",
         uploader=uploader,
         items=[Item(index=1, media_type="image", ext="jpg")],
     )
 
     assert render(DEFAULT_TEMPLATE, template_context(post, post.items[0])) == Path(
-        "sunset over the hills, first trip of the year (haroon).jpg"
+        "sunset over the hills, first trip of the year (someone) (190).jpg"
     )
-    assert render(DEFAULT_TEMPLATE, template_context(post, uploader.avatar)) == Path("avatar (haroon).jpg")
+    assert render(DEFAULT_TEMPLATE, template_context(post, uploader.avatar)) == Path("avatar (someone).jpg")
 
 
 def test_items_are_saved_in_carousel_order_whatever_order_the_result_lists_them() -> None:
@@ -176,10 +176,14 @@ def test_items_are_saved_in_carousel_order_whatever_order_the_result_lists_them(
     assert [item.index for item, _ in select_items(post, picks=parse_item_picks("image:3,video:2,image:1"))] == [1, 2, 3]
 
 
-def test_default_template_falls_back_to_the_id_without_a_caption_or_uploader() -> None:
-    post = Post(platform="instagram", id="C9x", items=[Item(index=i, media_type="image", ext="jpg") for i in (1, 2)])
+def test_default_template_starts_at_the_uploader_without_a_title_or_caption() -> None:
+    items = [Item(index=i, media_type="image", ext="jpg") for i in (1, 2)]
+    post = Post(platform="instagram", id="C9x", uploader=Profile(platform="instagram", username="someone"), items=items)
 
-    assert render(DEFAULT_TEMPLATE, template_context(post, post.items[1])) == Path("C9x-02.jpg")
+    assert render(DEFAULT_TEMPLATE, template_context(post, post.items[1])) == Path("(someone) (C9x)-02.jpg")
+
+    post.uploader = None
+    assert render(DEFAULT_TEMPLATE, template_context(post, post.items[1])) == Path("(C9x)-02.jpg")
 
 
 def test_spec_template_with_nested_fields() -> None:
@@ -334,10 +338,16 @@ def test_existing_files_are_not_downloaded_again(tmp_path, fake_files) -> None:
     assert len(fake_files) == 1
 
 
-def test_same_name_in_one_run_gets_a_counter(tmp_path, fake_files) -> None:
-    outcomes = download(carousel_post(), media_types=["image", "thumbnail"], output=str(tmp_path / "%(id)s.%(ext)s"))
+def test_same_name_in_one_run_gets_the_media_type_then_is_skipped(tmp_path, fake_files) -> None:
+    post = carousel_post()
+    post.items.append(Item(index=3, media_type="thumbnail", url="https://cdn.example.com/3.jpg", ext="jpg"))
+    outcomes = download(post, media_types=["image", "thumbnail"], output=str(tmp_path / "%(id)s.%(ext)s"))
 
-    assert [outcome.path.name for outcome in outcomes] == ["DAsTXK3JbrA.jpg", "DAsTXK3JbrA (2).jpg"]
+    assert [(outcome.status, outcome.path.name) for outcome in outcomes] == [
+        ("saved", "DAsTXK3JbrA.jpg"),
+        ("saved", "DAsTXK3JbrA thumbnail.jpg"),
+        ("exists", "DAsTXK3JbrA.jpg"),  # a second thumbnail: both names are taken
+    ]
 
 
 def test_missing_ext_comes_from_the_content_type(tmp_path, fake_files) -> None:
@@ -691,3 +701,56 @@ def test_embedding_uses_the_ffmpeg_yt_dlp_is_told_to_use(tmp_path, monkeypatch) 
 
     monkeypatch.setenv("CONTENT_DL_FFMPEG_LOCATION", str(tmp_path / "missing"))
     assert find_ffmpeg() == shutil.which("ffmpeg")
+
+
+# Names that would pass the system's limits
+
+def _long_post(caption: str) -> Post:
+    uploader = Profile(platform="instagram", username="someone")
+    items = [Item(index=i, media_type="image", ext="jpg") for i in (1, 2)]
+    return Post(platform="instagram", id="C9xYz123", description=caption, uploader=uploader, items=items)
+
+
+def test_title_is_cut_so_the_full_path_fits_a_windows_path_limit(tmp_path, monkeypatch) -> None:
+    from content_dl import naming
+
+    monkeypatch.setattr(naming, "MAX_PATH_CHARS", 259)
+    # Leaves about 90 characters for the file name, whatever the length of this machine's temp folder.
+    folder = tmp_path / ("x" * (259 - naming.NAME_RESERVE - 90 - len(str(tmp_path)) - 1))
+    template = str(folder / DEFAULT_TEMPLATE)
+    post = _long_post("a long caption about the trip we took to the northern mountains with everyone last summer")
+
+    path = naming.render_fitted(template, template_context(post, post.items[1]))
+
+    assert len(str(path)) + naming.NAME_RESERVE <= 259
+    assert path.name.startswith("a long caption")
+    assert path.name.endswith(" (someone) (C9xYz123)-02.jpg")
+    assert not path.name.startswith("a long caption about the trip we took to the northern mountains with")
+
+
+def test_title_is_cut_by_bytes_so_the_file_name_fits(tmp_path, monkeypatch) -> None:
+    from content_dl import naming
+
+    monkeypatch.setattr(naming, "MAX_NAME_BYTES", 120)
+    post = _long_post("日本の山 " * 20)
+
+    path = naming.render_fitted(str(tmp_path / DEFAULT_TEMPLATE), template_context(post, post.items[0]))
+
+    assert len(path.name.encode("utf-8")) + naming.NAME_RESERVE <= 120
+    assert path.name.startswith("日本の山") and path.name.endswith(" (someone) (C9xYz123)-01.jpg")
+
+
+def test_a_short_cut_title_is_kept_and_only_dropped_when_nothing_fits(tmp_path, monkeypatch) -> None:
+    from content_dl import naming
+
+    post = _long_post("sunset at the beach with everyone")
+    context = template_context(post, post.items[0])
+    folder_and_reserve = len(str(tmp_path)) + 1 + naming.NAME_RESERVE
+
+    # Room for "sunset..." and the rest of the name, but not "sunset at...".
+    monkeypatch.setattr(naming, "MAX_PATH_CHARS", folder_and_reserve + len("sunset... (someone) (C9xYz123)-01.jpg"))
+    assert naming.render_fitted(str(tmp_path / DEFAULT_TEMPLATE), context).name == "sunset... (someone) (C9xYz123)-01.jpg"
+
+    # No room for any of the title: the name starts at the uploader.
+    monkeypatch.setattr(naming, "MAX_PATH_CHARS", folder_and_reserve + len("(someone) (C9xYz123)-01.jpg"))
+    assert naming.render_fitted(str(tmp_path / DEFAULT_TEMPLATE), context).name == "(someone) (C9xYz123)-01.jpg"

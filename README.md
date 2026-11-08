@@ -2,16 +2,6 @@
 
 Paste one link, get every photo, video, audio track, thumbnail and profile picture in it, with clean file names.
 
-```bash
-content-dl "https://www.threads.com/@zuck/post/DfaNgswkQPG"
-```
-
-```text
-[download] image 1: Using our new spaces feature on Muse to build a tool for my (Mark Zuckerberg)-01.webp
-[download] image 2: Using our new spaces feature on Muse to build a tool for my (Mark Zuckerberg)-02.webp
-[download] video 3: Using our new spaces feature on Muse to build a tool for my (Mark Zuckerberg)-03.mp4
-```
-
 content-dl works like yt-dlp: you can download what a link holds, list it first, or print it as JSON. It uses [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [gallery-dl](https://github.com/mikf/gallery-dl) under the hood, plus its own extractors for the sites those two don't handle well, and gives you one consistent result whichever of them did the work.
 
 ## Contents
@@ -117,7 +107,7 @@ You need to activate the virtual environment again in each new terminal before r
 Download everything in a post into the current folder:
 
 ```bash
-content-dl "https://www.threads.com/@zuck/post/DfaNgswkQPG"
+content-dl "https://www.threads.com/@USERNAME/post/POST_ID"
 ```
 
 Always put the link in quotes. Links often contain `&` or `?`, which your terminal would otherwise read as its own syntax.
@@ -125,19 +115,19 @@ Always put the link in quotes. Links often contain `&` or `?`, which your termin
 See what a link holds before downloading anything:
 
 ```bash
-content-dl --list-only "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+content-dl --list-only "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 Download only the profile picture from a profile link:
 
 ```bash
-content-dl "https://www.tiktok.com/@drillyty"
+content-dl "https://www.tiktok.com/@USERNAME"
 ```
 
 Save into a folder per site and uploader:
 
 ```bash
-content-dl --filename-template "downloads/%(platform)s/%(uploader.username)s/%(display_title)s%(number&-{})s.%(ext)s" "https://x.com/NASA/status/1234567890"
+content-dl --filename-template "downloads/%(platform)s/%(uploader.username)s/%(display_title|)s (%(id)s)%(number&-{})s.%(ext)s" "https://x.com/USERNAME/status/POST_ID"
 ```
 
 ## What gets downloaded
@@ -159,32 +149,57 @@ Without options, content-dl downloads:
 
 Thumbnails, separate audio tracks and the uploader's profile picture are only downloaded when you ask for them with `--media-types` or `--items`.
 
-Files are saved in the current folder unless the file name template puts them somewhere else. A file that already exists is skipped, so running the same command twice doesn't download twice.
+Files are saved in the current folder unless the file name template puts them somewhere else. A file whose name already exists is skipped, not downloaded again or renamed, so running the same command twice is safe.
 
 ## File names
 
 The default name is:
 
 ```text
-title or caption (uploader)-number.extension
+title or caption (uploader) (id)-number.extension
 ```
 
-For example `sunset at the beach (haroon)-07.jpg`.
+For example `sunset at the beach (someone) (C9xYz123)-07.jpg`.
 
-- **Title or caption.** Sites with real titles (YouTube, Reddit, Pinterest) use the title. Instagram, Threads, X, TikTok and Facebook posts have no title, so the caption is used instead: its first line with words in it, without links, and without the hashtags and @mentions at its start or end. It's cut to 60 characters at a word boundary. A post with neither uses its id, such as `DAsTXK3JbrA`.
-- **Uploader.** The uploader's display name, or their username when the site gives no display name. Left out (with its brackets) when unknown.
-- **Number.** The item's position in the post, padded to two digits (`-01`, `-02`, ...). It only appears when the post holds more than one item, so a single photo or video is just `sunset at the beach (haroon).jpg`. A video and its cover image share a number, and differ by extension.
+- **Title or caption.** Sites with real titles (YouTube, Reddit, Pinterest) use the title. Instagram, Threads, X, TikTok and Facebook posts have no title, so the caption is used instead: its first line with words in it, without links, and without the hashtags and @mentions at its start or end. It's cut to 80 characters at a word boundary, or shorter when needed to fit (see below), and a cut title ends with `...`: `a very long caption about the trip we took to the... (someone) (C9xYz123).jpg`.
+- **Uploader.** The uploader's username, or their display name when the site gives no username. Left out (with its brackets) when unknown.
+- **Id.** The post's id on the site. It keeps two posts with the same caption from getting the same name.
+- **No title or caption?** The name starts at the uploader: `(someone) (C9xYz123)-02.jpg`.
+- **Number.** The item's position in the post, padded to two digits (`-01`, `-02`, ...). It only appears when the post holds more than one item, so a single photo or video is just `sunset at the beach (someone) (C9xYz123).jpg`. A video and its cover image are at the same position, so they share a number and differ by extension.
 - **Profile pictures** are named `avatar (uploader).jpg`.
+
+**Long names never fail.** Windows allows 260 characters for a whole path (folders included), and every system allows 255 bytes for one file name. When a name would go over either limit, content-dl shortens the title or caption, at a word boundary, until it fits. Whatever part of the title fits is kept, however short. The uploader, id, number and extension are never cut. It also leaves room for the temporary names a download uses on the way (such as `name.f251.webm.part`), which are what usually cause "file name too long" errors. Only if the folder is so deep that not one character of the title fits is it left out, and the name starts at the uploader: `(someone) (C9xYz123)-02.jpg`.
 
 Characters that aren't allowed in file names (`/ \ : * ? " < > |`) become `_`.
 
+A file whose name already exists is skipped. In the rare case that two items in one download would get the same name (a YouTube video and its separate audio track can both be `.webm`), the second gets its media type added, as in `... (VIDEO_ID) audio.webm`.
+
 ### Your own file names
 
-`--filename-template` takes a yt-dlp style template. Put a folder path in front to save into folders; they're created as needed.
+`--filename-template` takes a yt-dlp style template: fields from the first table below, written with the syntax from the second. Put a folder path in front to save into folders; they're created as needed.
 
-```bash
-content-dl --filename-template "%(platform)s/%(uploader.username)s/%(id)s_%(number|1)s.%(ext)s" URL
-```
+**Template fields**
+
+| Field | Example | Notes |
+| --- | --- | --- |
+| `display_title` | `sunset at the beach` | the title or caption, picked as described above; unset when the post has neither |
+| `display_uploader` | `someone` | the uploader's username, or display name |
+| `display_id` | `C9xYz123` | the post's id, unset on profile pictures |
+| `number` | `07` | the item's padded position, only set on posts with several items |
+| `platform` | `instagram` | the site; an unknown site gives its domain, such as `vimeo.com` |
+| `id` | `C9xYz123` | the post's id on the site, always set |
+| `title` | `A walk in the park` | the post's own title, often unknown on social sites |
+| `description` | `sunset at the beach #summer` | the full caption |
+| `upload_date` | `2026-10-30T18:22:00Z` | UTC; some sites give the day only (`2026-10-30`) |
+| `url` | `https://www.instagram.com/p/C9xYz123/` | the post's link |
+| `uploader.username` | `someone` | also `uploader.name`, `uploader.id`, `uploader.url` |
+| `username`, `name` | `someone`, `Some One` | on a profile link, the profile's own username and display name |
+| `index` | `7` | the item's position as a plain number |
+| `media_type` | `image` | `video`, `audio`, `image`, `thumbnail` or `avatar` |
+| `ext` | `jpg` | the file extension, without the dot |
+| `width`, `height` | `1080` | in pixels, when known |
+| `duration` | `14.2` | in seconds, for video and audio |
+| `provider` | `yt-dlp` | which tool found the item: `yt-dlp`, `gallery-dl` or `native` |
 
 **Template syntax**
 
@@ -199,32 +214,18 @@ content-dl --filename-template "%(platform)s/%(uploader.username)s/%(id)s_%(numb
 | `%(field)03d` | Python formatting: pad a number with zeros | `%(index)03d` |
 | `%%` | a literal `%` | |
 
-**Template fields**
-
-| Field | Example | Notes |
-| --- | --- | --- |
-| `display_title` | `sunset at the beach` | the title or caption, picked as described above |
-| `display_uploader` | `Haroon` | the uploader's display name or username |
-| `number` | `07` | the item's padded position, only set on posts with several items |
-| `platform` | `instagram` | the site; an unknown site gives its domain, such as `vimeo.com` |
-| `id` | `DAsTXK3JbrA` | the post's id on the site |
-| `title` | `Me at the zoo` | the post's own title, often unknown on social sites |
-| `description` | `sunset at the beach #summer` | the full caption |
-| `upload_date` | `2026-10-30T18:22:00Z` | UTC; some sites give the day only (`2026-10-30`) |
-| `url` | `https://www.instagram.com/p/...` | the post's link |
-| `uploader.username` | `haroon` | also `uploader.name`, `uploader.id`, `uploader.url` |
-| `username`, `name` | `haroon` | on a profile link, the profile's own username and display name |
-| `index` | `7` | the item's position as a plain number |
-| `media_type` | `image` | `video`, `audio`, `image`, `thumbnail` or `avatar` |
-| `ext` | `jpg` | the file extension, without the dot |
-| `width`, `height` | `1080` | in pixels, when known |
-| `duration` | `14.2` | in seconds, for video and audio |
-| `provider` | `yt-dlp` | which tool found the item: `yt-dlp`, `gallery-dl` or `native` |
-
 The default template is:
 
 ```text
-%(display_title,id|untitled)s%(display_uploader& ({}))s%(number&-{})s.%(ext)s
+%(display_title|)s%(display_uploader& ({}))s%(display_id& ({}))s%(number&-{})s.%(ext)s
+```
+
+Read it piece by piece: the title or caption (nothing when there's none), then ` (uploader)` when known, then ` (id)`, then `-07` on posts with several items. A space left at the start of a name is dropped.
+
+A template with a folder per site and uploader, and the id first:
+
+```bash
+content-dl --filename-template "%(platform)s/%(uploader.username|unknown)s/%(id)s%(number&-{})s.%(ext)s" URL
 ```
 
 ## Cookies (logged-in content)
@@ -251,13 +252,13 @@ To cover several sites with one file, log in to each of them, then click **Expor
 Pass the file with `--cookies`:
 
 ```bash
-content-dl --cookies "C:\Users\you\instagram-cookies.txt" "https://www.instagram.com/someone/"
+content-dl --cookies "C:\Users\you\instagram-cookies.txt" "https://www.instagram.com/USERNAME/"
 ```
 
 On macOS or Linux:
 
 ```bash
-content-dl --cookies ~/instagram-cookies.txt "https://www.instagram.com/someone/"
+content-dl --cookies ~/instagram-cookies.txt "https://www.instagram.com/USERNAME/"
 ```
 
 With cookies, content-dl also switches some sites to their logged-in routes, which give more (on Instagram, full-size images and uploader details).
@@ -273,7 +274,7 @@ With cookies, content-dl also switches some sites to their logged-in routes, whi
 `--cookies-from-browser` reads cookies from a browser's own store, with no export step:
 
 ```bash
-content-dl --cookies-from-browser firefox "https://www.facebook.com/share/p/abc123/"
+content-dl --cookies-from-browser firefox "https://www.facebook.com/share/p/SHARE_CODE/"
 ```
 
 Supported browsers: `brave`, `chrome`, `chromium`, `edge`, `firefox`, `opera`, `safari`, `vivaldi`, `whale`. Add a profile name after a colon to pick one: `firefox:work`.
@@ -344,11 +345,11 @@ content-dl [OPTIONS] --from-json FILE
 **See what's in a post, then pick items:**
 
 ```bash
-content-dl --list-only "https://www.instagram.com/p/Ddq_cbyluPU/"
+content-dl --list-only "https://www.instagram.com/p/POST_ID/"
 ```
 
 ```text
-[instagram] Ddq_cbyluPU: 8 item(s)
+[instagram] POST_ID: 8 item(s)
 
 INDEX  MEDIA TYPE  EXT  RESOLUTION  DURATION  FORMATS  PROVIDER
 1      image       jpg                                 yt-dlp
@@ -358,89 +359,89 @@ INDEX  MEDIA TYPE  EXT  RESOLUTION  DURATION  FORMATS  PROVIDER
 ```
 
 ```bash
-content-dl --items image:1,image:4 "https://www.instagram.com/p/Ddq_cbyluPU/"
+content-dl --items image:1,image:4 "https://www.instagram.com/p/POST_ID/"
 ```
 
 **Only the photos of a mixed post:**
 
 ```bash
-content-dl --media-types images "https://www.threads.com/@zuck/post/DfaNgswkQPG"
+content-dl --media-types images "https://www.threads.com/@USERNAME/post/POST_ID"
 ```
 
 **A post and its uploader's profile picture:**
 
 ```bash
-content-dl --media-types video,image,avatar "https://x.com/NASA/status/1234567890"
+content-dl --media-types video,image,avatar "https://x.com/USERNAME/status/POST_ID"
 ```
 
 **Just the profile picture of a post's uploader:**
 
 ```bash
-content-dl --media-types avatar "https://www.tiktok.com/@someone/video/7430000000000000000"
+content-dl --media-types avatar "https://www.tiktok.com/@USERNAME/video/VIDEO_ID"
 ```
 
 **A YouTube video at 720p at most:**
 
 ```bash
-content-dl --max-quality 720 "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+content-dl --max-quality 720 "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 **A YouTube video's sound only:**
 
 ```bash
-content-dl --media-types audio "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+content-dl --media-types audio "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 **A video's thumbnail:**
 
 ```bash
-content-dl --media-types thumbnail "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+content-dl --media-types thumbnail "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 **An exact yt-dlp format:**
 
 ```bash
-content-dl --ytdlp-format "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b" "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+content-dl --ytdlp-format "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b" "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 **Files with metadata written into them:**
 
 ```bash
-content-dl --embed-metadata "https://www.reddit.com/r/pics/comments/abc123/some_title/"
+content-dl --embed-metadata "https://www.reddit.com/r/SUBREDDIT/comments/POST_ID/"
 ```
 
 **A Facebook photo post (needs cookies):**
 
 ```bash
-content-dl --cookies facebook-cookies.txt "https://www.facebook.com/share/p/abc123/"
+content-dl --cookies facebook-cookies.txt "https://www.facebook.com/share/p/SHARE_CODE/"
 ```
 
 **Share links work as they are:**
 
 ```bash
-content-dl "https://vm.tiktok.com/ZMabc123/"
+content-dl "https://vm.tiktok.com/SHARE_CODE/"
 ```
 
 ```bash
-content-dl "https://pin.it/abc123"
+content-dl "https://pin.it/SHARE_CODE"
 ```
 
 ```bash
-content-dl "https://www.reddit.com/r/ApplePhotos/s/LFh9KV4XZ9"
+content-dl "https://www.reddit.com/r/SUBREDDIT/s/SHARE_CODE"
 ```
 
 **Folders per site and uploader, dated:**
 
 ```bash
-content-dl --filename-template "%(platform)s/%(uploader.username|unknown)s/%(upload_date).10s %(display_title,id)s%(number&-{})s.%(ext)s" URL
+content-dl --filename-template "%(platform)s/%(uploader.username|unknown)s/%(upload_date).10s%(display_title& {})s (%(id)s)%(number&-{})s.%(ext)s" URL
 ```
 
-This gives `instagram/haroon/2026-10-30 sunset at the beach-07.jpg`.
+This gives `instagram/someone/2026-10-30 sunset at the beach (C9xYz123)-07.jpg`.
 
 **Save the result now, download later (within a few hours):**
 
 ```bash
-content-dl --json-only "https://www.instagram.com/p/Ddq_cbyluPU/" > post.json
+content-dl --json-only "https://www.instagram.com/p/POST_ID/" > post.json
 ```
 
 ```bash
@@ -478,7 +479,7 @@ while read -r url; do content-dl "$url"; done < links.txt
     "id": "123456",
     "username": "someone",
     "name": "Some One",
-    "url": "https://www.instagram.com/someone/",
+    "url": "https://www.instagram.com/USERNAME/",
     "avatar": { "media_type": "avatar", "url": "https://...", "ext": "jpg", "provider": "native" }
   },
   "items": [
@@ -499,13 +500,13 @@ The same from Python:
 ```python
 from content_dl import Cookies, download, extract
 
-result = extract("https://www.threads.com/@zuck/post/DfaNgswkQPG")
+result = extract("https://www.threads.com/@USERNAME/post/POST_ID")
 print(result.description, [item.media_type for item in result.items])
 
 for outcome in download(result, media_types=["image"]):
     print(outcome.status, outcome.path)
 
-logged_in = extract("https://www.instagram.com/someone/", cookies=Cookies(file="instagram-cookies.txt"))
+logged_in = extract("https://www.instagram.com/USERNAME/", cookies=Cookies(file="instagram-cookies.txt"))
 ```
 
 `download()` takes the same choices as the command line: `media_types`, `picks` (from `content_dl.download.parse_item_picks("image:1,avatar")`), `output` (a file name template), `format`, `max_quality`, `embed_metadata` and `cookies`.
@@ -531,6 +532,8 @@ content-dl reads the override from, in order: `--routes FILE`, the `CONTENT_DL_R
 
 ## Environment variables
 
+Each one does the same as its flag, for every command, so you can set it once instead of typing the flag each time. A flag given on the command line still wins.
+
 | Variable | Same as |
 | --- | --- |
 | `CONTENT_DL_ROUTES` | `--routes FILE` |
@@ -551,7 +554,7 @@ content-dl reads the override from, in order: `--routes FILE`, the `CONTENT_DL_R
 
 **Strange characters in file names on Windows.** Captions with emoji are kept as they are; Windows Explorer shows them fine. Use your own `--filename-template` with `%(id)s` if you'd rather have plain names.
 
-**Two different posts got the same name.** Posts are named by caption and uploader, so two posts from one person with the same caption share a name, and the second is skipped as "already downloaded". Add the id to the template to keep both: `--filename-template "%(display_title,id)s [%(id)s]%(number&-{})s.%(ext)s"`.
+**A file was skipped as "already downloaded".** A file with that name already exists in the folder. Delete or move it to download it again.
 
 ## Updating
 

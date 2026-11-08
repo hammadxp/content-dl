@@ -22,9 +22,12 @@ from typing import Any
 
 MISSING = "NA"
 
-# "sunset (haroon)-07.jpg": the uploader and number are left out when unknown or not needed.
-# display_title is already cut to 60 characters at a word boundary (content_dl.naming).
-DEFAULT_TEMPLATE = "%(display_title,id|untitled)s%(display_uploader& ({}))s%(number&-{})s.%(ext)s"
+# "sunset (someone) (C9x)-07.jpg": title or caption, uploader, post id, position in the post.
+# Parts that are unknown or not needed are left out, so a post without a title or caption is
+# "(someone) (C9x)-07.jpg" (the space before the bracket is dropped with the title). display_title
+# is already cut to 80 characters at a word boundary, and less when the full path would pass the
+# system limit (content_dl.naming.render_fitted).
+DEFAULT_TEMPLATE = "%(display_title|)s%(display_uploader& ({}))s%(display_id& ({}))s%(number&-{})s.%(ext)s"
 
 # INFO: A spec may hold one level of balanced parentheses, so a replacement like ``& ({})`` works.
 FIELD = re.compile(r"%(?:%|\((?P<spec>(?:[^()]|\([^()]*\))*)\)(?P<format>[-#0 +]*\d*(?:\.\d+)?[diouxXeEfFgGcrs]))")
@@ -87,11 +90,12 @@ def _render_field(spec: str, fmt: str, context: Mapping[str, Any]) -> str:
 def render(template: str, context: Mapping[str, Any]) -> Path:
     """Render a template into a relative or absolute file path.
 
-    >>> context = {"id": "C9x", "display_title": "sunset", "display_uploader": "haroon", "number": "07", "ext": "jpg"}
+    >>> context = {"id": "C9x", "display_title": "sunset", "display_uploader": "someone", "display_id": "C9x",
+    ...            "number": "07", "ext": "jpg"}
     >>> render(DEFAULT_TEMPLATE, context).as_posix()
-    'sunset (haroon)-07.jpg'
-    >>> render(DEFAULT_TEMPLATE, {**context, "display_uploader": None, "number": None}).as_posix()
-    'sunset.jpg'
+    'sunset (someone) (C9x)-07.jpg'
+    >>> render(DEFAULT_TEMPLATE, {**context, "display_title": None, "number": None}).as_posix()
+    '(someone) (C9x).jpg'
     >>> render("%(uploader.username|unknown)s/%(id)s_%(number)s.%(ext)s", context).as_posix()
     'unknown/C9x_07.jpg'
     """
@@ -112,7 +116,7 @@ def render(template: str, context: Mapping[str, Any]) -> Path:
 
 
 def _fit(part: str, last: bool) -> str:
-    """Cut an over-long folder or file name, keeping the extension; drop trailing dots and spaces."""
+    """Cut an over-long folder or file name, keeping the extension; drop leading spaces and trailing dots and spaces."""
     if part == Path(part).anchor:
         return part
 
@@ -126,4 +130,4 @@ def _fit(part: str, last: bool) -> str:
 
         part = stem[: MAX_COMPONENT_CHARS - len(dot + ext)].rstrip() + dot + ext
 
-    return part.rstrip(" .") or "_"
+    return part.lstrip(" ").rstrip(" .") or "_"

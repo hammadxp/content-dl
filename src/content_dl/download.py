@@ -19,12 +19,12 @@ from urllib.parse import urlparse
 from content_dl.embed import EmbedError, embed, tags_for
 from content_dl.extract import normalise_media_types
 from content_dl.merge import sort_items
-from content_dl.naming import display_title, display_uploader, item_number
+from content_dl.naming import display_id, display_title, display_uploader, item_number, render_fitted
 from content_dl.providers.base import Cookies, ProviderError
 from content_dl.providers.native import http
 from content_dl.providers.ytdlp import SilentLogger, cookie_options, error_message, host_options
 from content_dl.schema import Item, MediaType, Post, Profile, Result
-from content_dl.template import DEFAULT_TEMPLATE, render
+from content_dl.template import DEFAULT_TEMPLATE
 
 Owner = Post | Profile
 Status = Literal["saved", "exists", "failed"]
@@ -166,8 +166,8 @@ def template_context(result: Result, item: Item) -> dict[str, Any]:
 
     The item's own ``url`` is ``item.url``, since ``url`` is the post's. A top-level profile is
     also its own ``uploader``, so one template works for post and profile URLs alike.
-    ``display_title``, ``display_uploader`` and ``number`` are the default name's parts (see
-    ``content_dl.naming``).
+    ``display_title``, ``display_uploader``, ``display_id`` and ``number`` are the default name's
+    parts (see ``content_dl.naming``).
     """
     context = result.to_dict()
     context.pop("items", None)
@@ -179,19 +179,24 @@ def template_context(result: Result, item: Item) -> dict[str, Any]:
     context["item"] = item_fields
     context["display_title"] = display_title(result, item)
     context["display_uploader"] = display_uploader(result)
+    context["display_id"] = display_id(result, item)
     context["number"] = item_number(result.items, item)
     return context
 
 
-def _unique(path: Path, used: set[Path]) -> Path:
-    """Add `` (2)`` and up when two items in one run render the same name."""
-    candidate = path
-    counter = 2
-    while candidate in used:
-        candidate = path.with_name(f"{path.stem} ({counter}){path.suffix}")
-        counter += 1
+def _unique(path: Path, used: set[Path], item: Item) -> Path | None:
+    """The path for an item, or ``None`` when an earlier item in this run already took the name.
 
-    used.add(candidate)
+    INFO: The number in a name is only ever the item's position, so a clash isn't solved with a
+    counter. It happens when two items share a position and an extension, such as a YouTube
+    video and its audio track both saved as webm; the second then gets its media type
+    (``... (id) audio.webm``). A name that still clashes is skipped.
+    """
+    candidates = [path, path.with_name(f"{path.stem} {item.media_type}{path.suffix}")]
+    candidate = next((candidate for candidate in candidates if candidate not in used), None)
+    if candidate is not None:
+        used.add(candidate)
+
     return candidate
 
 
@@ -237,9 +242,9 @@ def _save_file(run: _Run, result: Result, item: Item, owner: Owner) -> Download:
     context = template_context(result, item)
     path = None
     if item.ext:
-        path = _unique(render(run.output, context), run.used)
-        if path.exists():
-            return Download(item=item, owner=owner, status="exists", path=path)
+        path = _unique(render_fitted(run.output, context), run.used, item)
+        if path is None or path.exists():
+            return Download(item=item, owner=owner, status="exists", path=path or render_fitted(run.output, context))
 
     headers = {"Accept": ACCEPT_BY_MEDIA_TYPE[item.media_type]} if item.media_type in ACCEPT_BY_MEDIA_TYPE else None
     with http.stream(item.url, headers=headers, cookies=_site_cookies(run, item.url)) as response:
@@ -248,9 +253,9 @@ def _save_file(run: _Run, result: Result, item: Item, owner: Owner) -> Download:
 
         if path is None:
             context["ext"] = _ext_from_type(response.content_type) or "bin"
-            path = _unique(render(run.output, context), run.used)
-            if path.exists():
-                return Download(item=item, owner=owner, status="exists", path=path)
+            path = _unique(render_fitted(run.output, context), run.used, item)
+            if path is None or path.exists():
+                return Download(item=item, owner=owner, status="exists", path=path or render_fitted(run.output, context))
 
         path.parent.mkdir(parents=True, exist_ok=True)
         part = path.with_name(path.name + ".part")
@@ -299,7 +304,11 @@ def _save_stream(run: _Run, result: Result, item: Item, owner: Owner) -> Downloa
     if not formats:
         raise ProviderError("no downloadable stream in this item's formats")
 
-    path = _unique(render(run.output, template_context(result, item)), run.used)
+    rendered = render_fitted(run.output, template_context(result, item))
+    path = _unique(rendered, run.used, item)
+    if path is None:
+        return Download(item=item, owner=owner, status="exists", path=rendered)
+
     path.parent.mkdir(parents=True, exist_ok=True)
 
     info = {
