@@ -30,20 +30,26 @@ jobs:
       GH_REPO: ${{ github.repository }}
       PR_URL: ${{ github.event.pull_request.html_url }}
     steps:
-      # Dependabot only watches bundle/, so anything else in the PR means it isn't a plain version bump.
+      # Only bundled-tool bumps (bundle/) merge on their own. Dependabot's GitHub Actions bumps edit
+      # workflow files, which the Actions token isn't allowed to merge, so those wait for you.
       - name: Check changed files
+        id: files
         run: |
-          unexpected="$(gh pr diff "$PR_URL" --name-only | grep -v '^bundle/' || true)"
-          if [ -n "$unexpected" ]; then
-            echo "Not merging, the PR changes files outside bundle/:"
-            echo "$unexpected"
-            exit 1
+          other="$(gh pr diff "$PR_URL" --name-only | grep -v '^bundle/' || true)"
+          if [ -n "$other" ]; then
+            echo "Leaving this PR for a manual merge, it changes files outside bundle/:"
+            echo "$other"
+            echo "bundle_only=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "bundle_only=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Merge
+        if: steps.files.outputs.bundle_only == 'true'
         run: gh pr merge "$PR_URL" --squash --delete-branch
 
       # INFO: GitHub doesn't start workflows from pushes made with the Actions token, so the merge
       # above doesn't trigger release.yml on its own. Starting it by hand is allowed.
       - name: Release
+        if: steps.files.outputs.bundle_only == 'true'
         run: gh workflow run release.yml --ref main

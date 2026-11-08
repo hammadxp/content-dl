@@ -63,6 +63,16 @@ On macOS and Linux, rename it to `content-dl` and make it executable first:
 chmod +x content-dl
 ```
 
+**Windows says "Windows protected your PC".** The executable isn't code-signed, so SmartScreen warns about it the first time. Click **More info**, then **Run anyway**. Some antivirus programs also flag it by mistake, as they do with many Python programs packaged this way. You can check that your file matches the release with the `SHA2-256SUMS` file next to it.
+
+**macOS says the developer can't be verified.** The file isn't signed by Apple. Remove the download flag, then run it again:
+
+```bash
+xattr -d com.apple.quarantine content-dl
+```
+
+The macOS file runs on Apple Silicon Macs (M1 and newer), not on Intel Macs. On an Intel Mac, install from source instead.
+
 The executable already includes Python, yt-dlp and gallery-dl. You still need ffmpeg and Deno for YouTube (see the table below; skip the Python and Git rows). To update, download the newest release and replace the file.
 
 Releases are numbered `v1.N`, where N is the commit the build came from, so a higher number is always newer.
@@ -640,6 +650,6 @@ python scripts/build_exe.py
 
 Pushing to `main` builds the Windows, macOS and Linux executables on GitHub Actions and publishes them as release `v1.<commit count>` ([.github/workflows/release.yml](.github/workflows/release.yml)). Commits that only change docs or tests don't make a release. Run the workflow by hand from the Actions tab to release without a code change.
 
-Dependabot ([.github/dependabot.yml](.github/dependabot.yml)) checks `bundle/requirements.txt` every day. When yt-dlp, gallery-dl or another bundled tool has a new release, it opens a PR that bumps the pin. [.github/workflows/checks.yml](.github/workflows/checks.yml) tests and builds every PR on all three systems. Dependabot PRs that pass are merged automatically and published as a new release. A failing one stays open for you to look at. `pyproject.toml` only holds the minimum versions for source installs and doesn't change for these updates.
+Dependabot ([.github/dependabot.yml](.github/dependabot.yml)) checks `bundle/requirements.txt` every day. When yt-dlp, gallery-dl or another bundled tool has a new release, it opens a PR that bumps the pin. [.github/workflows/checks.yml](.github/workflows/checks.yml) tests and builds every PR on all three systems. Dependabot PRs that pass are merged automatically and published as a new release. A failing one stays open for you to look at. Once a week Dependabot also opens a PR that updates the GitHub Actions the workflows use. Those change workflow files, so they wait for you to merge them. `pyproject.toml` only holds the minimum versions for source installs and doesn't change for these updates.
 
 [SPEC.md](SPEC.md) describes the design: the data model, how each site is read, and why the tools are ordered as they are.

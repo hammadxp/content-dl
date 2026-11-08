@@ -1,10 +1,11 @@
-# Opens a PR when a tool bundled into the release executables has a new version.
+# Opens PRs when something the releases depend on has a new version.
 #
-# INFO: Only bundle/ is watched. pyproject.toml holds minimums for source installs and shouldn't
-# move every time yt-dlp releases.
+# INFO: For pip, only bundle/ is watched. pyproject.toml holds minimums for source installs and
+# shouldn't move every time yt-dlp releases.
 
 version: 2
 updates:
+  # Tools bundled into the executables. checks.yml merges these PRs once they pass.
   - package-ecosystem: pip
     directory: /bundle
     schedule:
@@ -16,3 +17,14 @@ updates:
         patterns: ["*"]
     commit-message:
       prefix: "Update bundled tools"
+
+  # Actions used by the workflows (checkout, setup-python, ...). These PRs wait for you to merge.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "Update GitHub Actions"
