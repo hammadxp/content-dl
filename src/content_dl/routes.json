@@ -38,8 +38,8 @@
       "metadata": ["yt-dlp"]
     },
     "instagram": {
-      "video": ["yt-dlp", "cobalt", "gallery-dl"],
-      "images": ["yt-dlp", "gallery-dl", "cobalt"],
+      "video": ["yt-dlp", "gallery-dl"],
+      "images": ["yt-dlp", "gallery-dl"],
       "thumbnail": ["yt-dlp"],
       "avatar": ["native"],
       "metadata": ["yt-dlp", "gallery-dl"]
@@ -52,28 +52,28 @@
       "metadata": ["native"]
     },
     "x": {
-      "video": ["yt-dlp", "cobalt"],
-      "images": ["gallery-dl", "cobalt"],
+      "video": ["yt-dlp"],
+      "images": ["gallery-dl"],
       "thumbnail": ["yt-dlp"],
       "avatar": ["gallery-dl"],
       "metadata": ["yt-dlp", "gallery-dl"]
     },
     "tiktok": {
-      "video": ["yt-dlp", "cobalt"],
+      "video": ["yt-dlp"],
       "images": ["gallery-dl"],
       "thumbnail": ["yt-dlp"],
       "avatar": ["gallery-dl"],
       "metadata": ["yt-dlp", "gallery-dl"]
     },
     "reddit": {
-      "video": ["native", "cobalt"],
+      "video": ["native"],
       "images": ["native"],
       "thumbnail": ["native"],
       "avatar": ["native"],
       "metadata": ["native"]
     },
     "facebook": {
-      "video": ["yt-dlp", "cobalt"],
+      "video": ["yt-dlp"],
       "images": ["gallery-dl", "native"],
       "thumbnail": ["yt-dlp"],
       "avatar": ["gallery-dl"],
@@ -87,7 +87,7 @@
       "metadata": ["native", "yt-dlp", "gallery-dl"]
     },
     "snapchat": {
-      "video": ["native", "gallery-dl", "cobalt"],
+      "video": ["native", "gallery-dl"],
       "images": [],
       "thumbnail": ["native", "gallery-dl"],
       "avatar": ["native"],
@@ -103,14 +103,14 @@
   },
   "routes_with_cookies": {
     "reddit": {
-      "video": ["native", "yt-dlp", "cobalt"],
+      "video": ["native", "yt-dlp"],
       "images": ["native", "gallery-dl"],
       "thumbnail": ["native", "yt-dlp"],
       "avatar": ["native", "gallery-dl"],
       "metadata": ["native", "gallery-dl", "yt-dlp"]
     },
     "instagram": {
-      "images": ["gallery-dl", "yt-dlp", "cobalt"],
+      "images": ["gallery-dl", "yt-dlp"],
       "avatar": ["gallery-dl", "native"],
       "metadata": ["gallery-dl", "yt-dlp"]
     }

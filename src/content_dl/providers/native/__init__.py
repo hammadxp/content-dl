@@ -165,7 +165,7 @@ class NativeProvider:
         try:
             info = YtDlpProvider(cookies=self.cookies).fetch_info(source)
         except ProviderError:
-            return []  # The poster still stands in; yt-dlp and cobalt can still try the video.
+            return []  # The poster still stands in; yt-dlp can still try the video.
 
         items = [item for item in items_from_info(info) if item.media_type in ("video", "audio")]
         for item in items:

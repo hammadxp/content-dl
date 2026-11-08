@@ -144,11 +144,42 @@ def test_default_template_names_every_item_of_a_carousel() -> None:
     names = [render(DEFAULT_TEMPLATE, template_context(post, item)).as_posix() for item in post.items]
 
     assert names == [
-        "sunset at the beach 🌅 [DAsTXK3JbrA] image 1.jpg",
-        "sunset at the beach 🌅 [DAsTXK3JbrA] video 2.mp4",
-        "sunset at the beach 🌅 [DAsTXK3JbrA] audio 2.m4a",
-        "sunset at the beach 🌅 [DAsTXK3JbrA] thumbnail 2.jpg",
+        "sunset at the beach 🌅 (Some One)-01.jpg",
+        "sunset at the beach 🌅 (Some One)-02.mp4",
+        "sunset at the beach 🌅 (Some One)-02.m4a",
+        "sunset at the beach 🌅 (Some One)-02.jpg",
     ]
+
+
+def test_default_template_leaves_out_the_number_of_a_single_item() -> None:
+    uploader = Profile(platform="x", username="haroon", avatar=Item(media_type="avatar", ext="jpg"))
+    post = Post(
+        platform="x",
+        id="190",
+        title="haroon - sunset over the hills, first trip of the...",
+        description="sunset over the hills, first trip of the year https://t.co/abc",
+        uploader=uploader,
+        items=[Item(index=1, media_type="image", ext="jpg")],
+    )
+
+    assert render(DEFAULT_TEMPLATE, template_context(post, post.items[0])) == Path(
+        "sunset over the hills, first trip of the year (haroon).jpg"
+    )
+    assert render(DEFAULT_TEMPLATE, template_context(post, uploader.avatar)) == Path("avatar (haroon).jpg")
+
+
+def test_items_are_saved_in_carousel_order_whatever_order_the_result_lists_them() -> None:
+    items = [Item(index=i, media_type="video" if i == 2 else "image", url=f"https://cdn/{i}") for i in (3, 1, 2)]
+    post = Post(platform="instagram", id="C9x", items=items)
+
+    assert [item.index for item, _ in select_items(post)] == [1, 2, 3]
+    assert [item.index for item, _ in select_items(post, picks=parse_item_picks("image:3,video:2,image:1"))] == [1, 2, 3]
+
+
+def test_default_template_falls_back_to_the_id_without_a_caption_or_uploader() -> None:
+    post = Post(platform="instagram", id="C9x", items=[Item(index=i, media_type="image", ext="jpg") for i in (1, 2)])
+
+    assert render(DEFAULT_TEMPLATE, template_context(post, post.items[1])) == Path("C9x-02.jpg")
 
 
 def test_spec_template_with_nested_fields() -> None:

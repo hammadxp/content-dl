@@ -1,5 +1,5 @@
 {
-  "INFO": "Real URLs for scripts/live_check.py. 'media_types' is passed to extract() (null means the defaults), 'expect' is the least number of items per media type the result must hold, and 'cookies' marks a URL that only works logged in. A null 'url' is a case still missing a URL. 'cobalt' marks a URL only a cobalt instance (CONTENT_DL_COBALT_URL) can serve.",
+  "INFO": "Real URLs for scripts/live_check.py. 'media_types' is passed to extract() (null means the defaults), 'expect' is the least number of items per media type the result must hold, and 'cookies' marks a URL that only works logged in. A null 'url' is a case still missing a URL.",
   "cases": [
     {
       "platform": "youtube",
@@ -354,8 +354,7 @@
       ],
       "expect": {
         "video": 1
-      },
-      "cobalt": true
+      }
     },
     {
       "platform": "snapchat",

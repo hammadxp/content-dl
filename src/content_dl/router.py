@@ -13,7 +13,7 @@ An override only lists what it changes. ``domains`` entries are added or replace
 ``routes`` or ``routes_with_cookies`` replaces that one cell, and ``disable`` takes providers
 out of every cell of a platform (``"*"`` for all platforms):
 
-    {"disable": {"tiktok": ["yt-dlp"]}, "routes": {"x": {"images": ["cobalt"]}}}
+    {"disable": {"tiktok": ["yt-dlp"]}, "routes": {"x": {"images": ["yt-dlp"]}}}
 
 Why the defaults are ordered as they are:
 
@@ -29,7 +29,6 @@ Why the defaults are ordered as they are:
 - TikTok: yt-dlp leads for videos, but has no photo-post extractor and its profile extractor
   fails logged out ("Unable to extract secondary user ID", Nov 8, 2026). gallery-dl reads both,
   so it follows in metadata: a photo post or profile then gets its fields from gallery-dl.
-- cobalt returns almost no metadata and runs on a datacenter IP, so it is always a fallback.
 
 - Snapchat: native leads because its pages dropped the ``__NEXT_DATA__`` blob that yt-dlp's and
   gallery-dl's Spotlight extractors read (Nov 8, 2026). gallery-dl still reads highlights,
@@ -39,8 +38,7 @@ Why the defaults are ordered as they are:
   there, it would only be asked about a Spotlight (always a video) or an anonymous poster's
   avatar, and fail.
 
-Providers that aren't built (generic) and cobalt without a configured instance are listed anyway and skipped at
-extraction time.
+Providers that aren't built (generic) are listed anyway and skipped at extraction time.
 """
 
 from __future__ import annotations
@@ -65,7 +63,7 @@ UNKNOWN_SITE = "unknown"
 COLUMNS = ("video", "images", "thumbnail", "avatar", "metadata")
 
 # Every provider name a config may use, built or not. A typo would otherwise be skipped silently.
-KNOWN_PROVIDERS = frozenset({"yt-dlp", "gallery-dl", "cobalt", "native", "generic"})
+KNOWN_PROVIDERS = frozenset({"yt-dlp", "gallery-dl", "native", "generic"})
 
 ROUTES_ENV = "CONTENT_DL_ROUTES"
 ALL_PLATFORMS = "*"
@@ -211,8 +209,8 @@ def load_config(routes: str | os.PathLike[str] | Mapping[str, Any] | RoutingConf
     Without one, the user's override file is used if there is one. Read on every call (it's a
     small file), so an updated config applies to the next extraction without a restart.
 
-    >>> load_config({"disable": {"tiktok": ["yt-dlp"]}}).routes_for("tiktok")["video"]
-    ['cobalt']
+    >>> load_config({"disable": {"tiktok": ["yt-dlp"]}}).routes_for("tiktok")["metadata"]
+    ['gallery-dl']
     """
     if isinstance(routes, RoutingConfig):
         return routes
@@ -267,7 +265,7 @@ def routes_for(platform: str, with_cookies: bool = False, config: RoutingConfig 
     ``with_cookies`` applies the platform's cookie overrides, for when the user gave cookies.
 
     >>> routes_for("instagram")["images"], routes_for("instagram", with_cookies=True)["images"]
-    (['yt-dlp', 'gallery-dl', 'cobalt'], ['gallery-dl', 'yt-dlp', 'cobalt'])
+    (['yt-dlp', 'gallery-dl'], ['gallery-dl', 'yt-dlp'])
     """
     return (config or default_config()).routes_for(platform, with_cookies)
 
@@ -295,7 +293,7 @@ def providers_for(
     (an unknown site's domain) uses the unknown-site row.
 
     >>> providers_for("x", ["video"])
-    ['yt-dlp', 'gallery-dl', 'cobalt']
+    ['yt-dlp', 'gallery-dl']
     """
     routes = routes_for(platform, with_cookies, config)
     ordered: list[str] = []

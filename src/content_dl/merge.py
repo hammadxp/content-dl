@@ -9,9 +9,6 @@ Rules (SPEC.md, "Data model" rule 2):
   copy wins and the lower one only fills fields it left unset.
 - A provider outside a media type's column is a last resort: its items of that media type are used only
   when no provider in the column returned any.
-- A fallback provider (cobalt) is used for a media type only when no other provider returned that
-  media type. Its items carry no media id and often a tunnel URL, so they can't be matched to other
-  providers' copies and would otherwise show up twice.
 """
 
 from __future__ import annotations
@@ -28,9 +25,6 @@ MEDIA_TYPE_ORDER: dict[str, int] = {"video": 0, "audio": 1, "image": 2, "thumbna
 
 # Fields a lower-priority duplicate may fill. provider and extra describe the winning copy only.
 FILLABLE_ITEM_FIELDS = tuple(f.name for f in fields(Item) if f.name not in ("media_type", "provider", "extra"))
-
-# Providers whose items can't be matched against other providers' items.
-FALLBACK_PROVIDERS = frozenset({"cobalt"})
 
 POST_FIELDS = ("id", "title", "description", "upload_date", "url")
 PROFILE_FIELDS = ("id", "username", "name", "url")
@@ -113,11 +107,7 @@ def _merge_media_type(
 ) -> list[Item]:
     own, rest = _ordered(routes.get(MEDIA_TYPE_COLUMNS[media_type], []), results)
     for names in (own, rest):
-        groups = {name: _items_of(results[name], media_type) for name in names}
-        if any(items for name, items in groups.items() if name not in FALLBACK_PROVIDERS):
-            groups = {name: items for name, items in groups.items() if name not in FALLBACK_PROVIDERS}
-
-        items = merge_items(list(groups.values()))
+        items = merge_items([_items_of(results[name], media_type) for name in names])
         if items:
             return items
 

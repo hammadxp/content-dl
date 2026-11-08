@@ -18,6 +18,8 @@ from urllib.parse import urlparse
 
 from content_dl.embed import EmbedError, embed, tags_for
 from content_dl.extract import normalise_media_types
+from content_dl.merge import sort_items
+from content_dl.naming import display_title, display_uploader, item_number
 from content_dl.providers.base import Cookies, ProviderError
 from content_dl.providers.native import http
 from content_dl.providers.ytdlp import SilentLogger, cookie_options, error_message, host_options
@@ -125,28 +127,32 @@ def select_items(
     ``media_types``, every item of those media_types (and the avatar, if asked). Without either, the
     defaults: every video and image, audio only where its post has no video (the video's
     download already includes the audio), and the avatar of a profile with nothing else.
+
+    Items come in carousel order (index 1, 2, 3...), whatever order the result or ``picks``
+    list them in, so a post's files are saved in the order the post shows them. The avatar is last.
     """
     media_types = normalise_media_types(media_types)
     avatar = _avatar_with_owner(result)
+    items = sort_items(result.items)
 
     if picks is not None:
-        chosen = [(item, result) for item in result.items if _picked(item, picks)]
+        chosen = [(item, result) for item in items if _picked(item, picks)]
         if avatar and _picked(avatar[0], picks):
             chosen.append(avatar)
 
         return chosen
 
     if media_types is not None:
-        chosen = [(item, result) for item in result.items if item.media_type in media_types]
+        chosen = [(item, result) for item in items if item.media_type in media_types]
         if "avatar" in media_types and avatar:
             chosen.append(avatar)
 
         return chosen
 
-    video_indexes = {item.index for item in result.items if item.media_type == "video"}
+    video_indexes = {item.index for item in items if item.media_type == "video"}
     chosen = [
         (item, result)
-        for item in result.items
+        for item in items
         if item.media_type in ("video", "image") or (item.media_type == "audio" and item.index not in video_indexes)
     ]
     if not chosen and isinstance(result, Profile) and avatar:
@@ -160,6 +166,8 @@ def template_context(result: Result, item: Item) -> dict[str, Any]:
 
     The item's own ``url`` is ``item.url``, since ``url`` is the post's. A top-level profile is
     also its own ``uploader``, so one template works for post and profile URLs alike.
+    ``display_title``, ``display_uploader`` and ``number`` are the default name's parts (see
+    ``content_dl.naming``).
     """
     context = result.to_dict()
     context.pop("items", None)
@@ -169,6 +177,9 @@ def template_context(result: Result, item: Item) -> dict[str, Any]:
     item_fields = item.to_dict()
     context.update({key: value for key, value in item_fields.items() if key not in ("url", "formats", "extra")})
     context["item"] = item_fields
+    context["display_title"] = display_title(result, item)
+    context["display_uploader"] = display_uploader(result)
+    context["number"] = item_number(result.items, item)
     return context
 
 

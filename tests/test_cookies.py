@@ -70,7 +70,7 @@ def test_windows_profile_path_survives_the_split() -> None:
 # Routing
 
 def test_cookies_put_gallery_dl_first_on_instagram() -> None:
-    assert providers_for("instagram", with_cookies=True) == ["gallery-dl", "yt-dlp", "cobalt", "native"]
+    assert providers_for("instagram", with_cookies=True) == ["gallery-dl", "yt-dlp", "native"]
     assert routes_for("instagram", with_cookies=True)["video"] == routes_for("instagram")["video"]
 
 

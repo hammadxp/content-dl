@@ -137,7 +137,7 @@ def test_strip_query_ignores_cdn_parameters() -> None:
 
 def test_duplicates_by_url_merge_and_keep_the_winner() -> None:
     high = [Item(index=1, media_type="image", url="https://cdn/a.jpg?s=1080", provider="gallery-dl")]
-    low = [Item(index=1, media_type="image", url="https://cdn/a.jpg?s=640", width=640, provider="cobalt")]
+    low = [Item(index=1, media_type="image", url="https://cdn/a.jpg?s=640", width=640, provider="native")]
 
     (merged,) = merge_items([high, low])
 

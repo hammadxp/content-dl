@@ -20,7 +20,6 @@ from content_dl import __version__
 from content_dl.download import Download, ItemPick, download, media_types_to_extract, parse_item_picks, parse_max_quality
 from content_dl.extract import ExtractionError, extract, normalise_media_types
 from content_dl.providers.base import Cookies
-from content_dl.providers.cobalt import API_KEY_ENV, URL_ENV, CobaltInstance
 from content_dl.providers.ytdlp import FFMPEG_LOCATION_ENV, JS_RUNTIMES_ENV
 from content_dl.router import ROUTES_ENV, RouterError
 from content_dl.schema import Item, Result, SchemaError, result_from_json, result_to_json
@@ -162,14 +161,6 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="FILE",
         help=f"JSON file that overrides the routing table (default: {ROUTES_ENV}, then content-dl/routes.json"
         " in the user config folder)",
-    )
-    routing.add_argument(
-        "--cobalt-url",
-        metavar="URL",
-        help=f"self-hosted cobalt instance to use as a fallback (default: {URL_ENV}); without one cobalt is skipped",
-    )
-    routing.add_argument(
-        "--cobalt-api-key", metavar="KEY", help=f"API key for the cobalt instance (default: {API_KEY_ENV})"
     )
 
     files = parser.add_argument_group("download")
@@ -367,14 +358,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_quality = parse_max_quality(args.max_quality) if args.max_quality else None
         cookies = Cookies(file=args.cookies, browser=args.cookies_from_browser)
         extract_media_types = media_types_to_extract(media_types) if downloading else media_types
-        cobalt = CobaltInstance.from_env()
-        if args.cobalt_url or args.cobalt_api_key:
-            url = args.cobalt_url or (cobalt.url if cobalt else None)
-            if not url:
-                raise ValueError("--cobalt-api-key needs --cobalt-url or " + URL_ENV)
-
-            cobalt = CobaltInstance(url, args.cobalt_api_key or (cobalt.api_key if cobalt else None))
-
         if args.from_json:
             result = _load_result(args.from_json)
         else:
@@ -384,7 +367,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 provider=args.provider,
                 cookies=cookies or None,
                 routes=args.routes,
-                cobalt=cobalt,
             )
     except ExtractionError as error:
         print(f"content-dl: error: {extraction_error_message(error, has_cookies=bool(cookies))}", file=sys.stderr)

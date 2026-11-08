@@ -1,8 +1,7 @@
 """Run content-dl against every real URL in tests/live_urls.json and print a pass/fail table.
 
 Nothing is downloaded: each case is one extract() call, checked against the item counts the case
-expects. Cases marked ``"cookies": true`` are skipped unless cookies are given, and cases marked
-``"cobalt": true`` unless CONTENT_DL_COBALT_URL is set. Cases run one at a time: extract() isn't
+expects. Cases marked ``"cookies": true`` are skipped unless cookies are given,. Cases run one at a time: extract() isn't
 safe to call from several threads at once.
 
     python scripts/live_check.py
@@ -16,7 +15,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
 import traceback
@@ -29,7 +27,6 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from content_dl.extract import extract  # noqa: E402
 from content_dl.providers.base import Cookies  # noqa: E402
-from content_dl.providers.cobalt import URL_ENV  # noqa: E402
 
 CASES_FILE = ROOT / "tests" / "live_urls.json"
 MARKS = {"pass": "PASS", "fail": "FAIL", "skip": "skip", "todo": "todo"}
@@ -77,9 +74,6 @@ def run_case(case: dict, cookies: Cookies | None, verbose: bool) -> Outcome:
 
     if case.get("cookies") and not cookies:
         return Outcome(platform, name, "skip", "needs --cookies or --cookies-from-browser")
-
-    if case.get("cobalt") and not os.environ.get(URL_ENV):
-        return Outcome(platform, name, "skip", f"needs a cobalt instance ({URL_ENV})")
 
     started = time.monotonic()
     try:

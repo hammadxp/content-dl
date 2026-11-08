@@ -1,0 +1,596 @@
+# content-dl
+
+Paste one link, get every photo, video, audio track, thumbnail and profile picture in it, with clean file names.
+
+```bash
+content-dl "https://www.threads.com/@zuck/post/DfaNgswkQPG"
+```
+
+```text
+[download] image 1: Using our new spaces feature on Muse to build a tool for my (Mark Zuckerberg)-01.webp
+[download] image 2: Using our new spaces feature on Muse to build a tool for my (Mark Zuckerberg)-02.webp
+[download] video 3: Using our new spaces feature on Muse to build a tool for my (Mark Zuckerberg)-03.mp4
+```
+
+content-dl works like yt-dlp: you can download what a link holds, list it first, or print it as JSON. It uses [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [gallery-dl](https://github.com/mikf/gallery-dl) under the hood, plus its own extractors for the sites those two don't handle well, and gives you one consistent result whichever of them did the work.
+
+## Contents
+
+- [Supported sites](#supported-sites)
+- [Install](#install)
+- [Quick start](#quick-start)
+- [What gets downloaded](#what-gets-downloaded)
+- [File names](#file-names)
+- [Cookies (logged-in content)](#cookies-logged-in-content)
+- [All options](#all-options)
+- [Examples](#examples)
+- [JSON output and the Python API](#json-output-and-the-python-api)
+- [Routing overrides](#routing-overrides)
+- [Environment variables](#environment-variables)
+- [Troubleshooting](#troubleshooting)
+- [Updating](#updating)
+- [Development](#development)
+
+## Supported sites
+
+| Site | Posts | Profiles (picture and name) | Needs cookies for |
+| --- | --- | --- | --- |
+| YouTube | videos, shorts, audio, thumbnail | channel avatar | age-restricted or members-only videos |
+| Instagram | posts, carousels, reels | profile picture | profile pictures, and some single-photo posts |
+| Threads | posts, carousels, share links, shared Instagram posts | profile picture | nothing in normal use |
+| X (Twitter) | images, videos, multi-image posts | profile picture | posts X only shows to logged-in accounts (sensitive content, some replies) |
+| TikTok | videos, audio, photo carousels, share links | profile picture | nothing in normal use |
+| Reddit | images, galleries, videos, share links | user and community icons | user and community icons |
+| Facebook | reels and videos, photo posts, share links | profile picture | photo posts and profile pictures |
+| Pinterest | image and video pins, `pin.it` links, board invites | profile picture | private boards |
+| Snapchat | Spotlight videos, `snapchat.com/t/...` links, highlights, stories | profile picture | nothing in normal use |
+
+**Other sites.** Any other link goes to yt-dlp and gallery-dl, which between them support well over a thousand sites (see yt-dlp's [supported sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) and gallery-dl's [supported sites](https://github.com/mikf/gallery-dl/blob/master/docs/supportedsites.md)). content-dl hasn't been tested on those, so treat them as best effort. If a site works in yt-dlp or gallery-dl directly, it should work here.
+
+## Install
+
+### 1. Install the requirements
+
+| Requirement | Why | How to get it |
+| --- | --- | --- |
+| Python 3.11 or newer | content-dl is a Python program | [python.org/downloads](https://www.python.org/downloads/). On Windows, tick "Add python.exe to PATH" in the installer |
+| Git | to download content-dl | [git-scm.com](https://git-scm.com/downloads) |
+| ffmpeg | joins video and audio (YouTube, Reddit), and writes metadata into files with `--embed-metadata` | Windows: `winget install Gyan.FFmpeg`. macOS: `brew install ffmpeg`. Linux: `sudo apt install ffmpeg` |
+| Deno | YouTube needs a JavaScript runtime to unlock its video streams | Windows: `winget install DenoLand.Deno`. macOS/Linux: see [deno.com](https://deno.com/) |
+
+Photos from most sites download without ffmpeg or Deno. Without ffmpeg, YouTube falls back to a lower quality that has audio and video in one file.
+
+Open a new terminal after installing these, then check them:
+
+```bash
+python --version
+```
+
+```bash
+ffmpeg -version
+```
+
+### 2. Install content-dl
+
+```bash
+git clone https://github.com/hammadxp/content-dl.git
+```
+
+```bash
+cd content-dl
+```
+
+Create a virtual environment so content-dl's packages stay separate from the rest of your system:
+
+```bash
+python -m venv .venv
+```
+
+Activate it. On Windows (PowerShell):
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+On macOS or Linux:
+
+```bash
+source .venv/bin/activate
+```
+
+Then install:
+
+```bash
+pip install -e .
+```
+
+Check that it works:
+
+```bash
+content-dl --version
+```
+
+You need to activate the virtual environment again in each new terminal before running `content-dl`. If you'd rather have the command available everywhere, install it with [pipx](https://pipx.pypa.io/) instead: `pipx install -e .` from the `content-dl` folder.
+
+## Quick start
+
+Download everything in a post into the current folder:
+
+```bash
+content-dl "https://www.threads.com/@zuck/post/DfaNgswkQPG"
+```
+
+Always put the link in quotes. Links often contain `&` or `?`, which your terminal would otherwise read as its own syntax.
+
+See what a link holds before downloading anything:
+
+```bash
+content-dl --list-only "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+```
+
+Download only the profile picture from a profile link:
+
+```bash
+content-dl "https://www.tiktok.com/@drillyty"
+```
+
+Save into a folder per site and uploader:
+
+```bash
+content-dl --filename-template "downloads/%(platform)s/%(uploader.username)s/%(display_title)s%(number&-{})s.%(ext)s" "https://x.com/NASA/status/1234567890"
+```
+
+## What gets downloaded
+
+Every link gives either a **post** or a **profile**, made up of **items**. Each item has a media type:
+
+| Media type | What it is |
+| --- | --- |
+| `video` | a video, in the best quality available (with its sound) |
+| `audio` | an audio track: a video's sound on its own, or the music of a photo post |
+| `image` | a photo |
+| `thumbnail` | a video's cover image |
+| `avatar` | the uploader's profile picture |
+
+Without options, content-dl downloads:
+
+- on a **post**: every video and photo, in the order the post shows them. A photo post's music is downloaded too, since there is no video that already carries it.
+- on a **profile**: the profile picture.
+
+Thumbnails, separate audio tracks and the uploader's profile picture are only downloaded when you ask for them with `--media-types` or `--items`.
+
+Files are saved in the current folder unless the file name template puts them somewhere else. A file that already exists is skipped, so running the same command twice doesn't download twice.
+
+## File names
+
+The default name is:
+
+```text
+title or caption (uploader)-number.extension
+```
+
+For example `sunset at the beach (haroon)-07.jpg`.
+
+- **Title or caption.** Sites with real titles (YouTube, Reddit, Pinterest) use the title. Instagram, Threads, X, TikTok and Facebook posts have no title, so the caption is used instead: its first line with words in it, without links, and without the hashtags and @mentions at its start or end. It's cut to 60 characters at a word boundary. A post with neither uses its id, such as `DAsTXK3JbrA`.
+- **Uploader.** The uploader's display name, or their username when the site gives no display name. Left out (with its brackets) when unknown.
+- **Number.** The item's position in the post, padded to two digits (`-01`, `-02`, ...). It only appears when the post holds more than one item, so a single photo or video is just `sunset at the beach (haroon).jpg`. A video and its cover image share a number, and differ by extension.
+- **Profile pictures** are named `avatar (uploader).jpg`.
+
+Characters that aren't allowed in file names (`/ \ : * ? " < > |`) become `_`.
+
+### Your own file names
+
+`--filename-template` takes a yt-dlp style template. Put a folder path in front to save into folders; they're created as needed.
+
+```bash
+content-dl --filename-template "%(platform)s/%(uploader.username)s/%(id)s_%(number|1)s.%(ext)s" URL
+```
+
+**Template syntax**
+
+| Syntax | Meaning | Example |
+| --- | --- | --- |
+| `%(field)s` | the field's value; `NA` when it's unknown | `%(id)s` |
+| `%(a.b)s` | a nested field | `%(uploader.username)s` |
+| `%(a,b,c)s` | the first of these fields that is known | `%(title,description,id)s` |
+| `%(field\|text)s` | `text` when the field is unknown | `%(uploader.name\|unknown)s` |
+| `%(field&text {})s` | `text` with the value in place of `{}` when the field is known, nothing otherwise | `%(number&-{})s` |
+| `%(field).50s` | Python formatting: cut to 50 characters | `%(description).50s` |
+| `%(field)03d` | Python formatting: pad a number with zeros | `%(index)03d` |
+| `%%` | a literal `%` | |
+
+**Template fields**
+
+| Field | Example | Notes |
+| --- | --- | --- |
+| `display_title` | `sunset at the beach` | the title or caption, picked as described above |
+| `display_uploader` | `Haroon` | the uploader's display name or username |
+| `number` | `07` | the item's padded position, only set on posts with several items |
+| `platform` | `instagram` | the site; an unknown site gives its domain, such as `vimeo.com` |
+| `id` | `DAsTXK3JbrA` | the post's id on the site |
+| `title` | `Me at the zoo` | the post's own title, often unknown on social sites |
+| `description` | `sunset at the beach #summer` | the full caption |
+| `upload_date` | `2026-10-30T18:22:00Z` | UTC; some sites give the day only (`2026-10-30`) |
+| `url` | `https://www.instagram.com/p/...` | the post's link |
+| `uploader.username` | `haroon` | also `uploader.name`, `uploader.id`, `uploader.url` |
+| `username`, `name` | `haroon` | on a profile link, the profile's own username and display name |
+| `index` | `7` | the item's position as a plain number |
+| `media_type` | `image` | `video`, `audio`, `image`, `thumbnail` or `avatar` |
+| `ext` | `jpg` | the file extension, without the dot |
+| `width`, `height` | `1080` | in pixels, when known |
+| `duration` | `14.2` | in seconds, for video and audio |
+| `provider` | `yt-dlp` | which tool found the item: `yt-dlp`, `gallery-dl` or `native` |
+
+The default template is:
+
+```text
+%(display_title,id|untitled)s%(display_uploader& ({}))s%(number&-{})s.%(ext)s
+```
+
+## Cookies (logged-in content)
+
+Some content is only shown to logged-in accounts: Facebook photo posts, Instagram profile pictures, Reddit profile icons, some X posts. content-dl never asks for your password. Instead, you give it your browser's cookies, which tell the site you're already logged in.
+
+**Warning.** A cookies file is your logged-in session. Anyone who has it can use your account without your password. Keep it private, never share or upload it, and don't put it inside a folder you sync or commit to Git. Downloading a lot with your cookies can also get your account rate-limited or flagged, so use them only for the links that need them.
+
+### Make a cookies.txt file with Get cookies.txt LOCALLY
+
+[Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) is a browser extension that exports cookies to a file on your computer, without sending them anywhere. It works in Chrome, Edge, Brave and other Chromium browsers.
+
+1. Open the [extension's page](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) and click **Add to Chrome**, then **Add extension**.
+2. Click the puzzle-piece icon in the browser toolbar and pin **Get cookies.txt LOCALLY**, so its icon stays visible.
+3. Log in to the site in that browser, for example instagram.com. Stay on the site.
+4. Click the extension's icon. Check that the format is **Netscape**.
+5. Click **Export**. The browser saves a file named like `www.instagram.com_cookies.txt` in your Downloads folder.
+6. Move it somewhere private, such as your user folder, and rename it to something easy to type, such as `instagram-cookies.txt`.
+
+To cover several sites with one file, log in to each of them, then click **Export All Cookies** instead. That file holds the cookies of every site you're logged in to, so guard it even more carefully. content-dl only sends each site its own cookies.
+
+### Use the cookies file
+
+Pass the file with `--cookies`:
+
+```bash
+content-dl --cookies "C:\Users\you\instagram-cookies.txt" "https://www.instagram.com/someone/"
+```
+
+On macOS or Linux:
+
+```bash
+content-dl --cookies ~/instagram-cookies.txt "https://www.instagram.com/someone/"
+```
+
+With cookies, content-dl also switches some sites to their logged-in routes, which give more (on Instagram, full-size images and uploader details).
+
+### Keep the cookies working
+
+- **Don't log out** of the site in the browser you exported from. Logging out ends the session, and the exported cookies stop working. If you want a session just for content-dl, log in from a private window, export there, and close the window without logging out.
+- **Export again when they expire.** Sessions last weeks to months. When content-dl says the cookies "aren't logged in, or have expired", repeat the export.
+- yt-dlp may update the cookies file with refreshed values while it runs. That's normal.
+
+### Read cookies straight from a browser
+
+`--cookies-from-browser` reads cookies from a browser's own store, with no export step:
+
+```bash
+content-dl --cookies-from-browser firefox "https://www.facebook.com/share/p/abc123/"
+```
+
+Supported browsers: `brave`, `chrome`, `chromium`, `edge`, `firefox`, `opera`, `safari`, `vivaldi`, `whale`. Add a profile name after a colon to pick one: `firefox:work`.
+
+This works best with **Firefox**. Recent versions of Chrome and Edge on Windows encrypt their cookies in a way other programs can't read, and lock the cookie store while the browser is open, so `--cookies-from-browser chrome` often fails there. Use a cookies.txt file from the extension instead.
+
+## All options
+
+```text
+content-dl [OPTIONS] URL
+content-dl [OPTIONS] --from-json FILE
+```
+
+### General
+
+| Option | What it does |
+| --- | --- |
+| `URL` | the post or profile link to read |
+| `-h`, `--help` | show the list of options and exit |
+| `--version` | show content-dl's version and exit |
+| `--json-only` | print everything found as JSON and download nothing |
+| `--list-only` | print a table of the items found, and every video's available qualities, and download nothing |
+| `--media-types TYPES` | only these media types, comma separated: `video`, `audio`, `image`, `thumbnail`, `avatar` (plurals such as `images` work too) |
+| `--from-json FILE` | read a result saved from `--json-only` instead of reading a link, then download from it. Do it soon: video links in the result expire within hours |
+| `--provider NAME` | use only one tool, for debugging: `yt-dlp`, `gallery-dl` or `native` |
+
+### Download
+
+| Option | What it does |
+| --- | --- |
+| `--items MEDIA_TYPE[:INDEX],...` | download only these items, such as `image:1,video:3,avatar`. A media type without a number means all of that type. Numbers are the `INDEX` column of `--list-only` |
+| `--max-quality RESOLUTION` | the highest video quality, such as `1080` or `720p`. Measured on the shorter side, so `1080` covers both 1920x1080 and vertical 1080x1920 videos. When a video has nothing at or under it, the next best quality is taken |
+| `--ytdlp-format FORMAT` | a yt-dlp format selection for video items, passed to yt-dlp unchanged, such as `"bv*+ba/b"` or `"137+140"` (format ids from `--list-only`) |
+| `--filename-template TEMPLATE` | the file name template, see [File names](#file-names) |
+| `--embed-metadata` | write the title, caption, uploader, date and link into each file (ffmpeg tags for video and audio, EXIF and XMP for images). Needs ffmpeg for video and audio |
+| `--report-json` | print one JSON line per finished item (`media_type`, `index`, `status`, `path`, `error`, `warning`) instead of the readable lines, for scripts and apps |
+
+### Cookies
+
+| Option | What it does |
+| --- | --- |
+| `--cookies FILE` | read cookies from a Netscape cookies.txt file, see [Cookies](#cookies-logged-in-content) |
+| `--cookies-from-browser BROWSER[:PROFILE]` | read cookies from a browser's own store |
+
+### Routing
+
+| Option | What it does |
+| --- | --- |
+| `--routes FILE` | a JSON file that changes which tools are tried for each site, see [Routing overrides](#routing-overrides) |
+
+### yt-dlp host settings
+
+| Option | What it does |
+| --- | --- |
+| `--js-runtimes RUNTIME[:PATH],...` | JavaScript runtimes yt-dlp may use for YouTube, such as `deno` or `node:/usr/bin/node`. Without it, yt-dlp looks for Deno |
+| `--ffmpeg-location PATH` | the ffmpeg program or its folder, when it isn't on your PATH |
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | everything asked for was found and saved |
+| `1` | nothing could be read from the link, nothing was saved, or at least one item failed |
+| `2` | the command was used wrongly, such as neither a URL nor `--from-json` |
+
+## Examples
+
+**See what's in a post, then pick items:**
+
+```bash
+content-dl --list-only "https://www.instagram.com/p/Ddq_cbyluPU/"
+```
+
+```text
+[instagram] Ddq_cbyluPU: 8 item(s)
+
+INDEX  MEDIA TYPE  EXT  RESOLUTION  DURATION  FORMATS  PROVIDER
+1      image       jpg                                 yt-dlp
+2      image       jpg                                 yt-dlp
+...
+8      image       jpg                                 yt-dlp
+```
+
+```bash
+content-dl --items image:1,image:4 "https://www.instagram.com/p/Ddq_cbyluPU/"
+```
+
+**Only the photos of a mixed post:**
+
+```bash
+content-dl --media-types images "https://www.threads.com/@zuck/post/DfaNgswkQPG"
+```
+
+**A post and its uploader's profile picture:**
+
+```bash
+content-dl --media-types video,image,avatar "https://x.com/NASA/status/1234567890"
+```
+
+**Just the profile picture of a post's uploader:**
+
+```bash
+content-dl --media-types avatar "https://www.tiktok.com/@someone/video/7430000000000000000"
+```
+
+**A YouTube video at 720p at most:**
+
+```bash
+content-dl --max-quality 720 "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+```
+
+**A YouTube video's sound only:**
+
+```bash
+content-dl --media-types audio "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+```
+
+**A video's thumbnail:**
+
+```bash
+content-dl --media-types thumbnail "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+```
+
+**An exact yt-dlp format:**
+
+```bash
+content-dl --ytdlp-format "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b" "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+```
+
+**Files with metadata written into them:**
+
+```bash
+content-dl --embed-metadata "https://www.reddit.com/r/pics/comments/abc123/some_title/"
+```
+
+**A Facebook photo post (needs cookies):**
+
+```bash
+content-dl --cookies facebook-cookies.txt "https://www.facebook.com/share/p/abc123/"
+```
+
+**Share links work as they are:**
+
+```bash
+content-dl "https://vm.tiktok.com/ZMabc123/"
+```
+
+```bash
+content-dl "https://pin.it/abc123"
+```
+
+```bash
+content-dl "https://www.reddit.com/r/ApplePhotos/s/LFh9KV4XZ9"
+```
+
+**Folders per site and uploader, dated:**
+
+```bash
+content-dl --filename-template "%(platform)s/%(uploader.username|unknown)s/%(upload_date).10s %(display_title,id)s%(number&-{})s.%(ext)s" URL
+```
+
+This gives `instagram/haroon/2026-10-30 sunset at the beach-07.jpg`.
+
+**Save the result now, download later (within a few hours):**
+
+```bash
+content-dl --json-only "https://www.instagram.com/p/Ddq_cbyluPU/" > post.json
+```
+
+```bash
+content-dl --from-json post.json --items image:2
+```
+
+**Several links in a row** (PowerShell):
+
+```powershell
+Get-Content links.txt | ForEach-Object { content-dl $_ }
+```
+
+macOS or Linux:
+
+```bash
+while read -r url; do content-dl "$url"; done < links.txt
+```
+
+## JSON output and the Python API
+
+`--json-only` prints the whole result. A post looks like this (shortened):
+
+```json
+{
+  "type": "post",
+  "platform": "instagram",
+  "id": "C9xYz123",
+  "title": null,
+  "description": "sunset at the beach",
+  "upload_date": "2026-10-30T18:22:00Z",
+  "url": "https://www.instagram.com/p/C9xYz123/",
+  "uploader": {
+    "type": "profile",
+    "platform": "instagram",
+    "id": "123456",
+    "username": "someone",
+    "name": "Some One",
+    "url": "https://www.instagram.com/someone/",
+    "avatar": { "media_type": "avatar", "url": "https://...", "ext": "jpg", "provider": "native" }
+  },
+  "items": [
+    { "index": 1, "media_type": "image", "url": "https://...", "ext": "jpg", "width": 1440, "height": 1800, "provider": "gallery-dl" },
+    { "index": 2, "media_type": "video", "ext": "mp4", "duration": 14.2, "formats": [], "provider": "yt-dlp" },
+    { "index": 2, "media_type": "thumbnail", "url": "https://...", "ext": "jpg", "provider": "yt-dlp" }
+  ]
+}
+```
+
+- A field the site doesn't give is `null` on posts and profiles, and left out on items. content-dl never guesses a value.
+- Items at the same `index` belong together, such as a video and its cover image.
+- `formats` lists a video's streams (resolution, codecs, bitrate, link), as yt-dlp does.
+- A profile link gives `"type": "profile"` at the top, with `username`, `name`, `avatar` and no `upload_date`.
+
+The same from Python:
+
+```python
+from content_dl import Cookies, download, extract
+
+result = extract("https://www.threads.com/@zuck/post/DfaNgswkQPG")
+print(result.description, [item.media_type for item in result.items])
+
+for outcome in download(result, media_types=["image"]):
+    print(outcome.status, outcome.path)
+
+logged_in = extract("https://www.instagram.com/someone/", cookies=Cookies(file="instagram-cookies.txt"))
+```
+
+`download()` takes the same choices as the command line: `media_types`, `picks` (from `content_dl.download.parse_item_picks("image:1,avatar")`), `output` (a file name template), `format`, `max_quality`, `embed_metadata` and `cookies`.
+
+## Routing overrides
+
+For each site, content-dl tries tools in a fixed order per media type (yt-dlp, gallery-dl, or its own `native` code) and merges what they return. The defaults are in [src/content_dl/routes.json](src/content_dl/routes.json). If a site changes and one tool breaks, you can change the order without waiting for an update, using a JSON file that only lists what it changes:
+
+```json
+{
+  "disable": { "tiktok": ["yt-dlp"] },
+  "routes": { "x": { "images": ["gallery-dl", "yt-dlp"] } },
+  "domains": { "vimeo.com": "vimeo" }
+}
+```
+
+- `disable` takes tools out of every column of a site, or of every site with `"*"`.
+- `routes` replaces single cells. Columns are `video`, `images`, `thumbnail`, `avatar` and `metadata`.
+- `routes_with_cookies` does the same for the order used when cookies are given.
+- `domains` adds or changes which site a domain belongs to.
+
+content-dl reads the override from, in order: `--routes FILE`, the `CONTENT_DL_ROUTES` environment variable, then `content-dl/routes.json` in your config folder (`%APPDATA%` on Windows, `~/.config` elsewhere).
+
+## Environment variables
+
+| Variable | Same as |
+| --- | --- |
+| `CONTENT_DL_ROUTES` | `--routes FILE` |
+| `CONTENT_DL_JS_RUNTIMES` | `--js-runtimes` |
+| `CONTENT_DL_FFMPEG_LOCATION` | `--ffmpeg-location` |
+
+## Troubleshooting
+
+**`content-dl` is not recognized / command not found.** Activate the virtual environment first (see [Install](#install)), or run it as `python -m content_dl URL` from the `content-dl` folder.
+
+**"... only shows this post to logged-in accounts".** The post needs cookies. Follow [Cookies](#cookies-logged-in-content). If you already gave cookies, they've expired: export them again.
+
+**"no avatar found in this post".** Instagram only shares profile pictures with a logged-in session. Add `--cookies`.
+
+**A YouTube video downloads in low quality, or only its thumbnail.** Install Deno and ffmpeg (see [Install](#install)), then update yt-dlp (see [Updating](#updating)). YouTube changes often, and an old yt-dlp stops working within weeks.
+
+**A site that used to work stopped working.** Update first. If it still fails, run with `--list-only` to see what was found, and try `--provider yt-dlp` or `--provider gallery-dl` to see which tool still reads the site. You can then reorder the tools with a [routing override](#routing-overrides).
+
+**Strange characters in file names on Windows.** Captions with emoji are kept as they are; Windows Explorer shows them fine. Use your own `--filename-template` with `%(id)s` if you'd rather have plain names.
+
+**Two different posts got the same name.** Posts are named by caption and uploader, so two posts from one person with the same caption share a name, and the second is skipped as "already downloaded". Add the id to the template to keep both: `--filename-template "%(display_title,id)s [%(id)s]%(number&-{})s.%(ext)s"`.
+
+## Updating
+
+Sites change often, and yt-dlp and gallery-dl ship fixes every few days. Update them regularly, with the virtual environment active:
+
+```bash
+pip install -U yt-dlp gallery-dl
+```
+
+To update content-dl itself, from the `content-dl` folder:
+
+```bash
+git pull
+```
+
+```bash
+pip install -e .
+```
+
+## Development
+
+Install the test tools and run the offline tests:
+
+```bash
+pip install -e ".[dev]"
+```
+
+```bash
+python -m pytest
+```
+
+Check every real link in [tests/live_urls.json](tests/live_urls.json) against the live sites (nothing is downloaded):
+
+```bash
+python scripts/live_check.py
+```
+
+```bash
+python scripts/live_check.py --only instagram,facebook --cookies cookies.txt
+```
+
+[SPEC.md](SPEC.md) describes the design: the data model, how each site is read, and why the tools are ordered as they are.

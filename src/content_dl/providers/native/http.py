@@ -1,4 +1,4 @@
-"""HTTP for the native and cobalt providers and the downloader: requests with the user's cookies, errors as ProviderError."""
+"""HTTP for the native provider and the downloader: requests with the user's cookies, errors as ProviderError."""
 
 from __future__ import annotations
 
@@ -90,19 +90,6 @@ def get(url: str, *, headers: dict[str, str] | None = None, cookies: dict[str, s
         response = client.get(url, **options)
     except errors as error:
         raise ProviderError(f"native: request to {url} failed: {error}") from error
-
-    return Response(status=response.status_code, url=str(response.url), text=response.text)
-
-
-def post_json(url: str, payload: Any, *, headers: dict[str, str] | None = None) -> Response:
-    """POST a JSON body, for API providers (cobalt). Uses requests: an API needs no browser impersonation."""
-    import requests
-
-    options_headers = {"Accept": "application/json", "Content-Type": "application/json", **(headers or {})}
-    try:
-        response = requests.post(url, json=payload, headers=options_headers, timeout=TIMEOUT_SECONDS)
-    except requests.RequestException as error:
-        raise ProviderError(f"request to {url} failed: {error}") from error
 
     return Response(status=response.status_code, url=str(response.url), text=response.text)
 

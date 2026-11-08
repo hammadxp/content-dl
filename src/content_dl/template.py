@@ -7,6 +7,7 @@ Supported per field (a subset of yt-dlp's, in its order):
 - ``title,description,id`` uses the first field that is set, so a post without a title still
   gets a readable name (the fallback order the spec asks for).
 - ``index& {}`` writes the replacement when the field is set (``{}`` is the value), else nothing.
+  The replacement may hold balanced parentheses: ``display_uploader& ({})``.
 - ``index|0`` writes the default when no field is set. Without one, an unset field is ``NA``.
 
 Values are made safe for file names; the template's own ``/`` separators make folders.
@@ -21,10 +22,12 @@ from typing import Any
 
 MISSING = "NA"
 
-# INFO: The title falls back to the caption, which can be a paragraph, so it is cut at 80 characters.
-DEFAULT_TEMPLATE = "%(title,description,username,id).80s [%(id)s] %(media_type)s%(index& {})s.%(ext)s"
+# "sunset (haroon)-07.jpg": the uploader and number are left out when unknown or not needed.
+# display_title is already cut to 60 characters at a word boundary (content_dl.naming).
+DEFAULT_TEMPLATE = "%(display_title,id|untitled)s%(display_uploader& ({}))s%(number&-{})s.%(ext)s"
 
-FIELD = re.compile(r"%(?:%|\((?P<spec>[^)]*)\)(?P<format>[-#0 +]*\d*(?:\.\d+)?[diouxXeEfFgGcrs]))")
+# INFO: A spec may hold one level of balanced parentheses, so a replacement like ``& ({})`` works.
+FIELD = re.compile(r"%(?:%|\((?P<spec>(?:[^()]|\([^()]*\))*)\)(?P<format>[-#0 +]*\d*(?:\.\d+)?[diouxXeEfFgGcrs]))")
 UNSAFE = re.compile(r'[\x00-\x1f\x7f<>:"/\\|?*]')
 SPACES = re.compile(r"\s+")
 
@@ -84,13 +87,13 @@ def _render_field(spec: str, fmt: str, context: Mapping[str, Any]) -> str:
 def render(template: str, context: Mapping[str, Any]) -> Path:
     """Render a template into a relative or absolute file path.
 
-    >>> context = {"id": "C9x", "title": None, "description": "sunset", "media_type": "image", "index": 1, "ext": "jpg"}
+    >>> context = {"id": "C9x", "display_title": "sunset", "display_uploader": "haroon", "number": "07", "ext": "jpg"}
     >>> render(DEFAULT_TEMPLATE, context).as_posix()
-    'sunset [C9x] image 1.jpg'
-    >>> render("%(uploader.username|unknown)s/%(id)s_%(index)03d.%(ext)s", context).as_posix()
-    'unknown/C9x_001.jpg'
-    >>> render(DEFAULT_TEMPLATE, {**context, "media_type": "avatar", "index": None}).as_posix()
-    'sunset [C9x] avatar.jpg'
+    'sunset (haroon)-07.jpg'
+    >>> render(DEFAULT_TEMPLATE, {**context, "display_uploader": None, "number": None}).as_posix()
+    'sunset.jpg'
+    >>> render("%(uploader.username|unknown)s/%(id)s_%(number)s.%(ext)s", context).as_posix()
+    'unknown/C9x_07.jpg'
     """
 
     def replace(match: re.Match[str]) -> str:

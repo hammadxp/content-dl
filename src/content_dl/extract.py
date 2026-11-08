@@ -7,7 +7,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from content_dl.merge import merge
-from content_dl.providers import CobaltInstance, Cookies, ProviderError, get_provider, provider_covers
+from content_dl.providers import Cookies, ProviderError, get_provider, provider_covers
 from content_dl.providers.base import LoginRequiredError, NeedsKnownError
 from content_dl.providers.native import NativeProvider, facebook
 from content_dl.router import MEDIA_TYPE_COLUMNS, RoutingConfig, columns_for, detect_platform, load_config
@@ -77,11 +77,9 @@ class _Fetcher:
         platform: str,
         media_types: list[MediaType] | None,
         cookies: Cookies | None,
-        cobalt: CobaltInstance | None,
     ) -> None:
         self.url = url
         self.cookies = cookies
-        self.cobalt = cobalt
         self.platform = platform
         self.media_types = media_types
         self.results: dict[str, Result] = {}
@@ -95,7 +93,7 @@ class _Fetcher:
         if name not in self.results and (name not in self.errors or retry):
             try:
                 # known is a copy, so a provider can't change what earlier providers returned.
-                provider = get_provider(name, self.cookies, self.cobalt)
+                provider = get_provider(name, self.cookies)
                 self.results[name] = provider.extract(
                     self.url, self.platform, self.media_types, known=dict(self.results)
                 )
@@ -141,7 +139,6 @@ def extract(
     provider: str | None = None,
     cookies: Cookies | None = None,
     routes: str | os.PathLike[str] | Mapping[str, Any] | RoutingConfig | None = None,
-    cobalt: CobaltInstance | str | None = None,
 ) -> Result:
     """Extract everything at ``url`` and return it as a Post or Profile.
 
@@ -151,8 +148,6 @@ def extract(
     cookie routes (on Instagram, gallery-dl's logged-in API leads images and metadata).
     ``routes`` overrides the routing table (a JSON file path or a dict in the same format, see
     ``content_dl.router``); without it the user's override file applies, if there is one.
-    ``cobalt`` is the cobalt instance to call (a URL or ``CobaltInstance``), defaulting to
-    ``CONTENT_DL_COBALT_URL``; without one, cobalt is skipped.
 
     Each routing column (metadata, then one per requested media type) tries its providers left to right
     until one returns what the column asks for. A provider runs at most once, and everything
@@ -183,21 +178,19 @@ def extract(
         except ProviderError as error:
             raise ExtractionError(str(error)) from error
 
-    instance = CobaltInstance(cobalt) if isinstance(cobalt, str) else cobalt or CobaltInstance.from_env()
-
     if provider:
         try:
-            forced = get_provider(provider, cookies, instance).extract(url, platform, chosen)
+            forced = get_provider(provider, cookies).extract(url, platform, chosen)
             return _keep_media_types(forced, chosen)
         except ProviderError as error:
             raise ExtractionError(str(error)) from error
 
     row = config.routes_for(platform, with_cookies=bool(cookies))
     columns = columns_for(chosen)
-    if not any(provider_covers(name, platform, instance) for column in columns for name in row.get(column, [])):
+    if not any(provider_covers(name, platform) for column in columns for name in row.get(column, [])):
         raise ExtractionError(f"no provider can handle {platform} with the current routing config")
 
-    fetcher = _Fetcher(url, platform, chosen, cookies, instance)
+    fetcher = _Fetcher(url, platform, chosen, cookies)
     for column in columns:
         # INFO: The metadata column runs first. Once it says the URL is a profile, only the avatar
         # is left to find: asking video or image providers about a profile costs requests and errors.
@@ -205,7 +198,7 @@ def extract(
             continue
 
         for name in row.get(column, []):
-            if not provider_covers(name, platform, instance):
+            if not provider_covers(name, platform):
                 continue
 
             result = fetcher.get(name)

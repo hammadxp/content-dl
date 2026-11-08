@@ -2,7 +2,7 @@
 
 Every extraction returns either a Post or a Profile, and both hold a list of Items.
 Providers translate their own output into these classes; nothing downstream of the
-merger sees yt-dlp, gallery-dl or cobalt data except inside ``Item.extra``.
+merger sees yt-dlp or gallery-dl data except inside ``Item.extra``.
 
 Serialisation rules (chosen so the SPEC.md examples round-trip unchanged):
 
