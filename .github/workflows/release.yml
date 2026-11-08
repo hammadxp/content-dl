@@ -1,7 +1,8 @@
 # Builds content-dl executables for Windows, macOS and Linux and publishes them as a GitHub release.
 #
 # INFO: The version is "1.<commit count>", so each release tag (v1.21, v1.22, ...) maps to one
-# commit. Commits that only touch docs or tests don't trigger a release, so some numbers are skipped.
+# commit. Only changes to what ships in the executables trigger a release (code, pyproject.toml, the
+# pinned tools, the build script), so docs, tests and workflow edits skip numbers.
 #
 # checks.yml merges passing Dependabot PRs and starts this workflow by hand, because GitHub doesn't
 # trigger workflows from merges made with the Actions token. Merges you make trigger it on push.
@@ -16,8 +17,6 @@ on:
       - "pyproject.toml"
       - "bundle/requirements.txt"
       - "scripts/build_exe.py"
-      - ".github/workflows/release.yml"
-      - ".github/workflows/build.yml"
   workflow_dispatch:
 
 permissions:
@@ -60,6 +59,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # release_notes.py reads the commits and tags since the last release.
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v8
         with:
@@ -70,6 +72,9 @@ jobs:
         working-directory: artifacts
         run: sha256sum content-dl* > SHA2-256SUMS
 
+      - name: Notes
+        run: python3 scripts/release_notes.py > notes.md
+
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -78,5 +83,5 @@ jobs:
           gh release create "v$VERSION" artifacts/* \
             --target "$GITHUB_SHA" \
             --title "content-dl v$VERSION" \
-            --generate-notes \
+            --notes-file notes.md \
             --latest
