@@ -164,6 +164,9 @@ def extract(
     if platform == "snapchat":
         url = NativeProvider(cookies).resolve_snapchat_url(url)
 
+    if platform == "tiktok":
+        url = NativeProvider(cookies).resolve_tiktok_url(url)
+
     if platform == "pinterest":
         try:
             url = NativeProvider(cookies).resolve_pinterest_url(url)

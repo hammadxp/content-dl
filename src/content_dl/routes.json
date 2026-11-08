@@ -63,7 +63,7 @@
       "images": ["gallery-dl"],
       "thumbnail": ["yt-dlp"],
       "avatar": ["gallery-dl"],
-      "metadata": ["yt-dlp"]
+      "metadata": ["yt-dlp", "gallery-dl"]
     },
     "reddit": {
       "video": ["native", "cobalt"],

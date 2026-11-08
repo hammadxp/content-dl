@@ -19,6 +19,7 @@ from content_dl.providers.base import Cookies, ProviderError
 from content_dl.providers.common import ext_from_url as _ext_from_url
 from content_dl.providers.native import facebook as facebook_url
 from content_dl.providers.native import instagram as instagram_url
+from content_dl.providers.native import tiktok as tiktok_url
 from content_dl.schema import Item, MediaType, Post, Profile, Result, SchemaError
 
 NAME = "gallery-dl"
@@ -178,6 +179,7 @@ def _tiktok_post(post: Kwdict, platform: str) -> Kwdict:
     author = post.get("author") if isinstance(post.get("author"), dict) else {}
     username = _text(author.get("uniqueId"))
     post_id = _id(post.get("id"))
+    kind = "photo" if post.get("imagePost") else "video"
     uploader = None
     if author:
         uploader = Profile(
@@ -194,7 +196,7 @@ def _tiktok_post(post: Kwdict, platform: str) -> Kwdict:
         "title": None,
         "description": _text(post.get("desc")),
         "upload_date": _date(post, "date"),
-        "url": f"https://www.tiktok.com/@{username}/video/{post_id}" if username and post_id else None,
+        "url": f"https://www.tiktok.com/@{username}/{kind}/{post_id}" if username and post_id else None,
         "uploader": uploader,
     }
 
@@ -376,6 +378,40 @@ def facebook_profile_from_messages(messages: Sequence[Message], platform: str, u
     )
 
 
+def tiktok_profile_from_messages(messages: Sequence[Message], platform: str, username: str) -> Profile:
+    """Translate gallery-dl's TikTok ``/@USER/avatar`` run into a Profile holding the avatar.
+
+    The run's kwdict is the account itself: ``uniqueId`` is the username, ``nickname`` the display name.
+
+    >>> messages = [(3, "https://cdn.example.com/pic.jpeg?x=1",
+    ...              {"id": "42", "uniqueId": "someone", "nickname": "Some One", "extension": "jpeg"})]
+    >>> profile = tiktok_profile_from_messages(messages, "tiktok", "someone")
+    >>> profile.id, profile.name, profile.url, profile.avatar.ext
+    ('42', 'Some One', 'https://www.tiktok.com/@someone', 'jpeg')
+    """
+    files = [(message[1], message[2]) for message in messages if message[0] == MESSAGE_URL]
+    if not files:
+        raise ProviderError("gallery-dl found no profile picture for this TikTok account")
+
+    url, file = files[0]
+    name = _text(file.get("uniqueId")) or username
+    return Profile(
+        platform=platform,
+        id=_id(file.get("id")),
+        username=name,
+        name=_text(file.get("nickname")),
+        url=f"{tiktok_url.ROOT}/@{name}",
+        avatar=Item(
+            media_type="avatar",
+            url=url,
+            ext=_text(file.get("extension")) or _ext_from_url(url),
+            width=_size(file.get("width")),
+            height=_size(file.get("height")),
+            provider=NAME,
+        ),
+    )
+
+
 def config_entries(cookies: Cookies | None) -> list[tuple[tuple[str, ...], str, Any]]:
     """The gallery-dl config entries for one run: per-site options, plus the user's cookies.
 
@@ -395,6 +431,26 @@ def config_entries(cookies: Cookies | None) -> list[tuple[tuple[str, ...], str, 
         entries.append((("extractor",), "cookies", list(cookies.browser_spec())))
 
     return entries
+
+
+class _ErrorLog(logging.Handler):
+    """Collects an extractor's error log lines, without the URL gallery-dl puts in front.
+
+    >>> log = _ErrorLog()
+    >>> log.emit(logging.makeLogRecord({"levelno": logging.ERROR, "msg": "%s: Requested %s not available",
+    ...                                 "args": ("https://www.tiktok.com/@a/video/1", "post")}))
+    >>> log.messages
+    ['Requested post not available']
+    """
+
+    def __init__(self) -> None:
+        super().__init__(logging.ERROR)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        message = record.getMessage().strip()
+        head, _, rest = message.partition(": ")
+        self.messages.append(rest if head.startswith(("http://", "https://")) and rest else message)
 
 
 class GalleryDlProvider:
@@ -419,14 +475,28 @@ class GalleryDlProvider:
             if found is None:
                 raise ProviderError("gallery-dl has no extractor for this URL")
 
-            data_job = job.DataJob(found, file=None)
-            data_job.run()
+            # INFO: Some extractors (TikTok's, for an unavailable post) log the reason as an error and
+            # yield nothing instead of raising. The log is caught here so the reason reaches the
+            # ProviderError, and kept off stderr, where it would print outside content-dl's output.
+            errors = _ErrorLog()
+            logger = getattr(found.log, "logger", found.log)  # Extractors log through a LoggerAdapter.
+            logger.addHandler(errors)
+            propagate, logger.propagate = logger.propagate, False
+            try:
+                data_job = job.DataJob(found, file=None)
+                data_job.run()
+            finally:
+                logger.removeHandler(errors)
+                logger.propagate = propagate
 
         if data_job.exception is not None:
             error = data_job.exception
             # Only the first line: later ones are gallery-dl's own tips, such as how to resume a run.
             message = str(error).strip().splitlines()[0] if str(error).strip() else ""
             raise ProviderError(f"gallery-dl: {type(error).__name__}: {message}".rstrip(": "))
+
+        if not data_job.data and errors.messages:
+            raise ProviderError(f"gallery-dl: {errors.messages[-1]}")
 
         return data_job.data
 
@@ -487,6 +557,14 @@ class GalleryDlProvider:
             # returns just the profile picture, which is what a profile URL means in content-dl.
             messages = self.fetch_messages(f"https://www.facebook.com/{profile}/avatar")
             return facebook_profile_from_messages(messages, platform, url)
+
+        if platform == "tiktok":
+            kind, username = tiktok_url.parse_url(url)
+            if kind == "profile" and username:
+                # INFO: As on Facebook, the profile extractor queues the whole feed; the avatar
+                # extractor returns the account and its picture in one request.
+                messages = self.fetch_messages(tiktok_url.avatar_page(username))
+                return tiktok_profile_from_messages(messages, platform, username)
 
         if platform == "facebook" and facebook_url.is_post_url(url):
             return self.facebook_post(platform, known, avatar_requested)

@@ -82,7 +82,7 @@ def test_shipped_config_matches_the_spec_table() -> None:
 def test_override_disables_a_provider_on_one_platform() -> None:
     config = load_config({"disable": {"tiktok": ["yt-dlp"]}})
     assert config.routes_for("tiktok")["video"] == ["cobalt"]
-    assert config.routes_for("tiktok")["metadata"] == []
+    assert config.routes_for("tiktok")["metadata"] == ["gallery-dl"]
     assert config.routes_for("x")["video"] == ["yt-dlp", "cobalt"]
     assert default_config().routes_for("tiktok")["video"] == ["yt-dlp", "cobalt"]
 
@@ -252,7 +252,7 @@ def test_cli_with_a_routes_file_and_cobalt_url(tmp_path, capsysbinary, cobalt_se
 
 def test_without_an_instance_cobalt_is_skipped(ytdlp_calls) -> None:
     with pytest.raises(ExtractionError, match="no provider can handle tiktok"):
-        extract(TIKTOK_URL, media_types=["video"], routes={"disable": {"tiktok": ["yt-dlp"]}})
+        extract(TIKTOK_URL, media_types=["video"], routes={"disable": {"tiktok": ["yt-dlp", "gallery-dl"]}})
 
 
 def test_cli_rejects_a_bad_routes_file(tmp_path, capsys) -> None:

@@ -7,6 +7,7 @@
 - Reddit posts from the public embed page (logged out), profile and community icons from
   ``about.json``, and share links resolved.
 - Snapchat Spotlight videos and profiles, from the page's schema.org JSON, and share links resolved.
+- TikTok share links resolved (the posts themselves are read by yt-dlp and gallery-dl).
 
 The unknown-site row lists ``generic`` (og: tags), which isn't built yet; extract() skips it.
 """
@@ -17,7 +18,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from content_dl.providers.base import Cookies, NeedsKnownError, ProviderError
-from content_dl.providers.native import facebook, http, instagram, pinterest, reddit, snapchat, threads
+from content_dl.providers.native import facebook, http, instagram, pinterest, reddit, snapchat, threads, tiktok
 from content_dl.schema import Item, Post, Profile, Result
 
 NAME = "native"
@@ -222,6 +223,21 @@ class NativeProvider:
                 url = response.url
 
         return snapchat.clean_url(url)
+
+    def resolve_tiktok_url(self, url: str) -> str:
+        """The page a TikTok share link opens, without its share parameters. On a network error the link is kept."""
+        if tiktok.is_short_url(url):
+            try:
+                response = http.get(url, cookies=self.site_cookies("tiktok.com"))
+            except ProviderError:
+                return url
+
+            # INFO: The status isn't checked: TikTok can answer the post page with a bot check, but
+            # the redirect has already named the post by then.
+            if not tiktok.is_short_url(response.url):
+                url = response.url
+
+        return tiktok.clean_url(url)
 
     def extract_snapchat(self, url: str, platform: str) -> Result:
         kind, _ = snapchat.parse_url(url)

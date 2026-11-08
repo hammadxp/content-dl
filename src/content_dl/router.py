@@ -26,6 +26,9 @@ Why the defaults are ordered as they are:
 - Reddit: native leads because the public embed page is the only logged-out source left; Reddit
   blocks yt-dlp's and gallery-dl's requests without a session (Nov 8, 2026). They're listed only
   in the cookie row, where they can stand in if the embed page changes.
+- TikTok: yt-dlp leads for videos, but has no photo-post extractor and its profile extractor
+  fails logged out ("Unable to extract secondary user ID", Nov 8, 2026). gallery-dl reads both,
+  so it follows in metadata: a photo post or profile then gets its fields from gallery-dl.
 - cobalt returns almost no metadata and runs on a datacenter IP, so it is always a fallback.
 
 - Snapchat: native leads because its pages dropped the ``__NEXT_DATA__`` blob that yt-dlp's and
