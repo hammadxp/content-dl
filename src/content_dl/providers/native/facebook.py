@@ -128,11 +128,14 @@ def profile_id(url: str) -> str | None:
 
 
 def is_post_url(url: str) -> bool:
-    """A regular post: ``story.php``, ``permalink.php`` or ``/NAME/posts/ID``.
+    """A regular post: ``story.php``, ``permalink.php``, ``/NAME/posts/ID`` or a group's
+    ``/groups/GROUP/permalink/ID`` and ``/groups/GROUP/posts/ID``.
 
     >>> is_post_url("https://www.facebook.com/story.php?story_fbid=12&id=34")
     True
     >>> is_post_url("https://www.facebook.com/someone/posts/pfbid0abc")
+    True
+    >>> is_post_url("https://www.facebook.com/groups/330663894103253/permalink/2584283715407915/")
     True
     >>> is_post_url("https://www.facebook.com/photo/?fbid=12")
     False
@@ -141,7 +144,27 @@ def is_post_url(url: str) -> bool:
     if segments and segments[0] in ("story.php", "permalink.php"):
         return True
 
+    if group_post_id(url):
+        return True
+
     return len(segments) >= 3 and segments[1] == "posts"
+
+
+def group_post_id(url: str) -> str | None:
+    """The post id of a group post URL, or None for any other page.
+
+    >>> group_post_id("https://www.facebook.com/groups/330663894103253/permalink/2584283715407915/")
+    '2584283715407915'
+    >>> group_post_id("https://www.facebook.com/groups/somegroup/posts/123/")
+    '123'
+    >>> group_post_id("https://www.facebook.com/groups/somegroup/") is None
+    True
+    """
+    segments = [segment for segment in urlsplit(url).path.split("/") if segment]
+    if len(segments) >= 4 and segments[0].lower() == "groups" and segments[2].lower() in ("permalink", "posts"):
+        return segments[3]
+
+    return None
 
 
 def profile_name_from_url(url: str) -> str | None:
@@ -166,13 +189,21 @@ JSON_BLOCK = re.compile(r'<script type="application/json"[^>]*>(.*?)</script>', 
 
 
 def story_fbid(url: str) -> str | None:
-    """The post id a ``story.php`` or ``permalink.php`` URL carries; ``/NAME/posts/ID`` ids are opaque.
+    """The post id a ``story.php``, ``permalink.php`` or numeric group post URL carries.
+
+    ``/NAME/posts/ID`` ids, and group posts named by a ``pfbid``, are opaque.
 
     >>> story_fbid("https://www.facebook.com/story.php?story_fbid=122&id=615")
     '122'
+    >>> story_fbid("https://www.facebook.com/groups/3306/permalink/2584283715407915/")
+    '2584283715407915'
     """
     ids = parse_qs(urlsplit(url).query).get("story_fbid")
-    return ids[0] if ids else None
+    if ids:
+        return ids[0]
+
+    group_post = group_post_id(url)
+    return group_post if group_post and group_post.isdigit() else None
 
 
 def _walk(value: Any) -> Iterator[dict[str, Any]]:
