@@ -1,0 +1,1 @@
+- Use conventional commits: `feat:` (minor, Added), `fix:` (patch, Fixed), `perf:`/`refactor:`/`style:` (Changed), `docs:`/`chore:`/`ci:`/`test:` (not in changelog), `feat!:` for breaking changes (major). They drive versioning and CHANGELOG.md.
