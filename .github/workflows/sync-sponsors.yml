@@ -1,0 +1,37 @@
+name: Sync Patreon sponsors
+
+# Runs daily and on demand. Updates sponsors.json and the README sponsor list.
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Fetch sponsors from Patreon
+        env:
+          PATREON_ACCESS_TOKEN: ${{ secrets.PATREON_ACCESS_TOKEN }}
+        run: python .github/scripts/sync_patreon_sponsors.py
+
+      - name: Commit changes
+        run: |
+          if git diff --quiet -- sponsors.json README.md; then
+            echo "No sponsor changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add sponsors.json README.md
+          git commit -m "chore: update sponsors"
+          git push

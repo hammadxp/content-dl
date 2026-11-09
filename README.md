@@ -21,6 +21,7 @@ content-dl works like yt-dlp: you can download what a link holds, list it first,
 - [Updating](#updating)
 - [Android](#android)
 - [Development](#development)
+- [Support](#support)
 
 ## Supported sites
 
@@ -672,3 +673,13 @@ Pushing to `main` builds the Windows, macOS and Linux executables on GitHub Acti
 Dependabot ([.github/dependabot.yml](.github/dependabot.yml)) checks `bundle/requirements.txt` every day. When yt-dlp, gallery-dl or another bundled tool has a new release, it opens a PR that bumps the pin. [.github/workflows/checks.yml](.github/workflows/checks.yml) tests and builds every PR on all three systems. Dependabot PRs that pass are merged automatically and published as a new release. A failing one stays open for you to look at. Once a week Dependabot also opens a PR that updates the GitHub Actions the workflows use. Those change workflow files, so they wait for you to merge them. `pyproject.toml` only holds the minimum versions for source installs and doesn't change for these updates.
 
 [SPEC.md](SPEC.md) describes the design: the data model, how each site is read, and why the tools are ordered as they are.
+
+## Support
+
+[![Support me on Patreon](https://img.shields.io/badge/Patreon-Support%20content--dl-F96854?style=for-the-badge&logo=patreon&logoColor=white)](https://patreon.com/hammadxp)
+
+content-dl is free and open source. If you find it useful, you can support its development on [Patreon](https://patreon.com/hammadxp) with the **content-dl supporter** tier. Supporters are listed below and updated daily.
+
+<!-- sponsors:start -->
+No supporters yet. [Be the first!](https://patreon.com/hammadxp)
+<!-- sponsors:end -->
