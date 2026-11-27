@@ -4,7 +4,7 @@
 # pins what each release ships, so rebuilding a commit always gets the same tools. Dependabot
 # opens a PR when any of these has a new release; merging it publishes a new v1.N.
 
-yt-dlp[curl-cffi]==2026.10.26
+yt-dlp[curl-cffi]==2026.11.23
 gallery-dl==1.32.21
 requests==2.34.2
 curl_cffi==0.17.0
